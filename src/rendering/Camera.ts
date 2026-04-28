@@ -20,8 +20,9 @@ export function createCamera(app: Application, opts: CameraOptions): Viewport {
     events: app.renderer.events,
   });
 
+  // Middle mouse only: left/right are reserved for game actions (move/attack).
   viewport
-    .drag({ mouseButtons: 'middle-left' })
+    .drag({ mouseButtons: 'middle' })
     .pinch()
     .wheel({ smooth: 5 })
     .clampZoom({

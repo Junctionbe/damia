@@ -64,16 +64,17 @@
 
 **Tâches :**
 
-- [ ] ECS core (`Entity`, `Component`, `System`, `World`) dans `core/ecs/`
-- [ ] Components : `Position`, `Velocity`, `Sprite`, `Player`, `Pathfinder`
-- [ ] `gameplay/entities/player.ts` : factory Dart (capsule rouge orientée, 1 tile)
-- [ ] `services/AssetManager.ts` : génère placeholders procéduraux pour Dart (4 directions de capsules colorées suffisent pour M2)
-- [ ] `gameplay/controls/InputController.ts` : capture clic gauche → cible
-- [ ] `easystarjs` setup sur la grille
-- [ ] `PathfindingSystem` : calcule le chemin
-- [ ] `MovementSystem` : suit le chemin à vitesse constante
-- [ ] `RenderSystem` : sync sprite.position depuis `Position` component
-- [ ] Tri Z par `gridX + gridY`
+- [x] ECS core (`Entity`, `World`, `System`) dans `core/ecs/` + 5 tests vitest
+- [x] Components : `Position`, `Velocity`, `Sprite`, `Player`, `Pathfinder`, `Speed`
+- [x] `gameplay/entities/player.ts` : factory Dart (capsule rouge 28×48)
+- [x] `services/AssetManager.ts` : manifest procédural placeholder (`sprite.player.dart`)
+- [x] `gameplay/controls/InputController.ts` : clic gauche/droit grille → MoveCommand, touche `C` toggle camera follow, contextmenu désactivé
+- [x] `easystarjs` setup grille 32×32 (tout marchable en M2)
+- [x] `PathfindingSystem` : calcule le chemin async, gère cas same-cell et no-path
+- [x] `MovementSystem` : suit le chemin à vitesse constante (180 px/s), avec arrival epsilon
+- [x] `RenderSystem` : crée/sync nodes Pixi depuis components, sortableChildren actif
+- [x] Tri Z par `gridX + gridY` (via `isoZIndex`)
+- [x] Camera drag déplacée sur clic molette uniquement (libère clic gauche/droit)
 
 **Done quand :**
 
@@ -284,8 +285,8 @@
 | ----- | ---------- | ------------------------------------------------------- |
 | M0    | ✅ done    | Setup OK : dev/build/lint/typecheck passent, husky armé |
 | M1    | ✅ done    | Scène iso 32×32 + caméra drag/zoom + FPS overlay        |
-| M2    | ⏳ pending | Prêt à démarrer                                         |
-| M3    | —          |                                                         |
+| M2    | ✅ done    | ECS + Dart + clic-to-move + pathfinding + camera follow |
+| M3    | ⏳ pending | Prêt à démarrer                                         |
 | M4    | —          |                                                         |
 | M5    | —          |                                                         |
 | M6    | —          |                                                         |

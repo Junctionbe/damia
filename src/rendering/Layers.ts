@@ -11,6 +11,7 @@ export class Layers {
   constructor() {
     this.ground = new Container({ label: 'ground' });
     this.entities = new Container({ label: 'entities', isRenderGroup: true });
+    this.entities.sortableChildren = true; // for iso depth sort via zIndex
     this.fx = new Container({ label: 'fx' });
     this.ui = new Container({ label: 'ui' });
   }
