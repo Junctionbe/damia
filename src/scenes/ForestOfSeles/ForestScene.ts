@@ -10,12 +10,17 @@ import type { Entity, System } from '@core/ecs';
 import { gridToWorld } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
 import { spawnPlayer } from '@gameplay/entities/player';
+import { spawnProp } from '@gameplay/entities/props';
+import { spawnExit } from '@gameplay/entities/props/exit';
 import { InputController } from '@gameplay/controls/InputController';
 import { PathfindingSystem } from '@gameplay/systems/PathfindingSystem';
 import { MovementSystem } from '@gameplay/systems/MovementSystem';
-
-const GRID_SIZE = 32;
-const PLAYER_SPAWN = { gx: 16, gy: 16 } as const;
+import { ExitSystem } from '@gameplay/systems/ExitSystem';
+import { ForestMap, buildCollisionGrid } from './MapLoader';
+import { propBlocks } from '@data/props';
+import { Toast } from '@ui/Toast';
+import { t } from '@services/I18nService';
+import { DemoEndScene } from '@scenes/DemoEndScene';
 
 export class ForestScene implements Scene {
   readonly name = 'forest';
@@ -26,12 +31,19 @@ export class ForestScene implements Scene {
   private world: World<Components> | null = null;
   private systems: System<Components>[] = [];
   private input: InputController | null = null;
+  private toast: Toast | null = null;
   private playerId: Entity | null = null;
   private cameraFollow = false;
 
   enter(ctx: GameContext): void {
-    // Build the visual world.
-    this.tilemap = new TileMap({ width: GRID_SIZE, height: GRID_SIZE });
+    const map = ForestMap;
+
+    // Visual world.
+    this.tilemap = new TileMap({
+      width: map.size.w,
+      height: map.size.h,
+      pathZones: map.pathZones,
+    });
     const bounds = this.tilemap.worldBounds();
 
     this.viewport = createCamera(ctx.app, {
@@ -43,36 +55,52 @@ export class ForestScene implements Scene {
     this.layers = new Layers();
     this.layers.mountWorld(this.viewport);
     this.layers.mountUi(ctx.app.stage);
-
-    // Tilemap is drawn around (0,0) in its own local space; we keep it at origin
-    // so world coords map 1:1 to iso coords (worldToGrid works without offset).
     this.layers.ground.addChild(this.tilemap.container);
 
-    // Build the ECS world.
+    // ECS world + entities from map.
     this.world = new World<Components>();
-    this.playerId = spawnPlayer(this.world, PLAYER_SPAWN);
+    this.playerId = spawnPlayer(this.world, map.spawn);
+    for (const prop of map.props) {
+      spawnProp(this.world, prop);
+    }
+    for (const exit of map.exits) {
+      spawnExit(this.world, exit);
+    }
 
-    // Build the collision grid (M2: all walkable; M3 will mark obstacles).
-    const collisionGrid: number[][] = Array.from({ length: GRID_SIZE }, () =>
-      new Array<number>(GRID_SIZE).fill(0),
-    );
+    // Pathfinding grid honors blocking props.
+    const collisionGrid = buildCollisionGrid(map, propBlocks);
+    const pathfinding = new PathfindingSystem(collisionGrid);
+    const movement = new MovementSystem();
+    const render = new RenderSystem(this.layers);
+    const exits = new ExitSystem();
+    this.systems = [pathfinding, movement, exits, render];
 
-    this.systems = [
-      new PathfindingSystem(collisionGrid),
-      new MovementSystem(),
-      new RenderSystem(this.layers),
-    ];
+    // Toast for blocked-exit messages.
+    this.toast = new Toast(ctx.app, this.layers.ui);
 
-    // Center the camera on the player's initial position.
-    const playerWorld = gridToWorld(PLAYER_SPAWN.gx, PLAYER_SPAWN.gy);
+    exits.onTrigger(({ exit }) => {
+      if (exit.kind === 'transition' && exit.targetScene === 'demo-end') {
+        // Defer scene switch: ForestScene.exit() destroys our world/systems
+        // synchronously, so doing it inline mid-update would NPE the remaining
+        // systems in the same loop iteration.
+        queueMicrotask(() => {
+          void ctx.scenes.switchTo(new DemoEndScene(), ctx);
+        });
+      } else if (exit.kind === 'blocked') {
+        this.toast?.show(t(exit.messageKey));
+      }
+    });
+
+    // Center camera on the player spawn.
+    const playerWorld = gridToWorld(map.spawn.gx, map.spawn.gy);
     this.viewport.moveCenter(playerWorld.x, playerWorld.y);
 
-    // Wire input.
+    // Input.
     this.input = new InputController({
       app: ctx.app,
       viewport: this.viewport,
-      gridWidth: GRID_SIZE,
-      gridHeight: GRID_SIZE,
+      gridWidth: map.size.w,
+      gridHeight: map.size.h,
     });
     this.input.onMove((cmd) => {
       if (!this.world || this.playerId === null) return;
@@ -88,6 +116,8 @@ export class ForestScene implements Scene {
   }
 
   exit(ctx: GameContext): void {
+    this.toast?.destroy();
+    this.toast = null;
     this.input?.destroy();
     this.input = null;
     for (const sys of this.systems) sys.destroy?.();
@@ -109,9 +139,12 @@ export class ForestScene implements Scene {
 
   update(dt: number): void {
     if (!this.world) return;
-    for (const sys of this.systems) sys.update(dt, this.world);
+    for (const sys of this.systems) {
+      if (!this.world) break; // a previous system may have triggered exit()
+      sys.update(dt, this.world);
+    }
 
-    if (this.cameraFollow && this.viewport && this.playerId !== null) {
+    if (this.cameraFollow && this.viewport && this.world && this.playerId !== null) {
       const pos = this.world.getComponent(this.playerId, 'Position');
       if (pos) this.viewport.moveCenter(pos.x, pos.y);
     }

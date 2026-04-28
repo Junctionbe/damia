@@ -93,14 +93,19 @@
 
 **Tâches :**
 
-- [ ] Définir layout Forêt de Seles dans `scenes/ForestOfSeles/map.json` (zones marchables / bloquées / spawns / exits)
-- [ ] `gameplay/entities/props/` : tree, rock, logFallen, rootCluster (placeholders géométriques colorés type vert foncé / brun)
-- [ ] Component `Collider` (AABB ou cercle simple)
-- [ ] `CollisionSystem` : empêche traversée
-- [ ] Pathfinder utilise la grille de collision
-- [ ] Sortie sud "Demo End" trigger une scène vide avec texte
-- [ ] Sortie ouest "Path overgrown" : texte au survol, rien ne se passe
-- [ ] Auto-tile background : herbe + chemin de terre dessiné en patterns
+- [x] Layout Forêt de Seles dans `scenes/ForestOfSeles/map.json` (52 props, 2 path zones, spawn nord, 2 exits)
+- [x] `gameplay/entities/props/` : factory générique `spawnProp`, kinds tree/rock/log/roots
+- [x] `data/props.ts` : définitions par kind (sprite + blocks)
+- [x] Component `Collider` + Component `Exit` (transition | blocked)
+- [x] CollisionSystem implicite : `MapLoader.buildCollisionGrid` produit la grille easystarjs depuis les props bloquants
+- [x] Pathfinder utilise la grille de collision (Dart contourne les arbres)
+- [x] Sortie sud (16, 31) → `DemoEndScene` (écran noir avec texte)
+- [x] Sortie ouest (0, 16) → toast "Path overgrown" via `t('exits.westPathOvergrown')`
+- [x] Auto-tile : path zones rendues en dirt brun, ailleurs damier vert
+- [x] `services/I18nService.ts` : stub minimal `t(key, params?)` (M7 swappera pour i18next)
+- [x] `ui/Toast.ts` : toast bottom-center avec fade in/out, multi-stack
+- [x] `ExitSystem` : detect player on exit cell, fire trigger, anti-spam re-entry
+- [x] RenderSystem étendu : 4 nouvelles formes (tree/rock/log/roots) base-anchored sur le tile
 
 **Done quand :**
 
@@ -286,8 +291,8 @@
 | M0    | ✅ done    | Setup OK : dev/build/lint/typecheck passent, husky armé |
 | M1    | ✅ done    | Scène iso 32×32 + caméra drag/zoom + FPS overlay        |
 | M2    | ✅ done    | ECS + Dart + clic-to-move + pathfinding + camera follow |
-| M3    | ⏳ pending | Prêt à démarrer                                         |
-| M4    | —          |                                                         |
+| M3    | ✅ done    | Forêt + collisions + exits (DemoEnd/Path overgrown)     |
+| M4    | ⏳ pending | Prêt à démarrer                                         |
 | M5    | —          |                                                         |
 | M6    | —          |                                                         |
 | M7    | —          |                                                         |

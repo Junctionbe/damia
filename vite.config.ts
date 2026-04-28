@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   server: {
     port: 5173,
+    strictPort: true, // fail loudly if 5173 is busy instead of silently reallocating
     open: true,
   },
   build: {

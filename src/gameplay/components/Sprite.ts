@@ -1,4 +1,4 @@
-export type SpriteShape = 'capsule' | 'circle' | 'diamond';
+export type SpriteShape = 'capsule' | 'circle' | 'diamond' | 'tree' | 'rock' | 'log' | 'roots';
 export type SpriteLayer = 'ground' | 'entities' | 'fx';
 
 /**

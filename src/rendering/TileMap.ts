@@ -1,18 +1,31 @@
 import { Container, Graphics } from 'pixi.js';
 import { TILE_HALF_H, TILE_HALF_W, gridToWorld } from '@core/math/iso';
 
+export interface TileMapPathZone {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface TileMapOptions {
   width: number;
   height: number;
-  /** Two colors used for the debug checker pattern. */
-  colors?: [number, number];
+  /** Two grass tones (alternated by checker pattern). */
+  grassColors?: readonly [number, number];
+  /** Two dirt tones (alternated by checker pattern) used inside path zones. */
+  dirtColors?: readonly [number, number];
+  /** Rectangular zones rendered as dirt path. Cells outside are grass. */
+  pathZones?: readonly TileMapPathZone[];
 }
 
-const DEFAULT_COLORS: [number, number] = [0x3a5a3f, 0x2e4a32];
+const DEFAULT_GRASS: readonly [number, number] = [0x3a5a3f, 0x2e4a32];
+const DEFAULT_DIRT: readonly [number, number] = [0x6e4a2c, 0x614127];
 
 /**
- * M1 placeholder tilemap: draws a flat WxH iso grid as colored diamonds.
- * Will be replaced by @pixi/tilemap with real textures in M3+.
+ * M3 placeholder tilemap: per-tile checker, with optional rectangular path
+ * zones rendered in dirt tones. Will be replaced by `@pixi/tilemap` + real
+ * textures starting M6.
  */
 export class TileMap {
   readonly container: Container;
@@ -24,17 +37,23 @@ export class TileMap {
     this.height = opts.height;
     this.container = new Container({ label: 'tilemap' });
 
-    const colors = opts.colors ?? DEFAULT_COLORS;
-    this.draw(colors);
+    const grass = opts.grassColors ?? DEFAULT_GRASS;
+    const dirt = opts.dirtColors ?? DEFAULT_DIRT;
+    const zones = opts.pathZones ?? [];
+    this.draw(grass, dirt, zones);
   }
 
-  private draw(colors: [number, number]): void {
+  private draw(
+    grass: readonly [number, number],
+    dirt: readonly [number, number],
+    zones: readonly TileMapPathZone[],
+  ): void {
     const g = new Graphics();
     for (let gy = 0; gy < this.height; gy++) {
       for (let gx = 0; gx < this.width; gx++) {
         const center = gridToWorld(gx, gy);
-        const color = (gx + gy) % 2 === 0 ? colors[0] : colors[1];
-        // Diamond centered on (center.x, center.y)
+        const palette = this.isInZone(zones, gx, gy) ? dirt : grass;
+        const color = palette[(gx + gy) % 2 === 0 ? 0 : 1];
         g.poly([
           center.x,
           center.y - TILE_HALF_H,
@@ -52,9 +71,14 @@ export class TileMap {
     this.container.addChild(g);
   }
 
-  /** World pixel bounds that contain the entire grid (for camera setup). */
+  private isInZone(zones: readonly TileMapPathZone[], gx: number, gy: number): boolean {
+    for (const z of zones) {
+      if (gx >= z.x && gx < z.x + z.w && gy >= z.y && gy < z.y + z.h) return true;
+    }
+    return false;
+  }
+
   worldBounds(): { width: number; height: number; minX: number; minY: number } {
-    // Leftmost world.x is at gx=0, gy=height-1; rightmost at gx=width-1, gy=0
     const left = gridToWorld(0, this.height - 1).x;
     const right = gridToWorld(this.width - 1, 0).x;
     const top = gridToWorld(0, 0).y;
