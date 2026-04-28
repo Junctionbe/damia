@@ -1,7 +1,7 @@
 # ARCHITECTURE — Damia
 
 > État fonctionnel et organisation du code à un instant T.
-> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M4.
+> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M5.
 
 ---
 
@@ -18,32 +18,33 @@
 
 ## État fonctionnel actuel
 
-**Jalon courant :** M4 ✅ done — prêt pour M5.
+**Jalon courant :** M5 ✅ done — prêt pour M6.
 
 **Ce qui marche aujourd'hui :**
 
 - **Forêt de Seles 32×32** : layout TLoD-fidèle, 52 props bloquants, deux sorties (DemoEnd + Path overgrown)
-- **Combat action temps réel** :
-  - Dart spawn (16, 2), HP 100, ATK 12, DEF 3, atkSpeed 1.5/s, range 80px
-  - **1 Berserk Mouse** spawn à (16, 10) sur le chemin (HP 20, ATK 5, DEF 1, aggroRange 256px)
-  - **Clic gauche sur ennemi** → Dart pathfind vers la cible, s'arrête à portée, attaque automatiquement
-  - **Mob aggro** : si Dart entre dans aggroRange, la souris l'attaque en retour
-  - **Dégâts** : `max(1, atk - def + variance)` — variance ±2, ±50% si target défend
-  - **Floating damage numbers** : nombres rouges/bleus + "+5 XP" jaune montent et fadent
-  - **Touche `S`** maintenue : Dart Defend (sprite shrink à 0.85, immobile, dégâts réduits 50%)
-  - **Mob meurt** : disparaît, drop "+5 XP"
-  - **Dart meurt** : `GameOverScene` rouge sombre "You died / Press R to restart" → reload ForestScene complet (Dart respawn full HP)
-- Tous les acquis M0-M3 (FPS overlay, drag/zoom, camera follow `C`, click-to-move, exits)
-- 13 tests passent (4 iso + 5 ECS + 4 combat damage formula)
+- **6 mobs** spawnés selon `map.json` :
+  - 2 Berserk Mice (16, 9) et (4, 16) — fuient sous 30% HP
+  - 2 Goblins (14, 16) et (17, 28) — aggro standard mêlée
+  - 1 Assassin Cock (19, 17) — hit-and-run, retire après chaque coup
+  - 1 Trent (16, 24) — slow tank, gros dégâts (12), defense 6
+- **IA per-kind** différenciée perceptiblement :
+  - Mouse : charge → fuite à HP bas
+  - Goblin/Trent : engage et tape jusqu'à mort
+  - Cock : tape puis recule à 200px tant que cooldown > 50%
+- **Combat** : clic gauche sur mob → engage, S maintenu → defend, mort Dart → GameOver
+- **Loot** : 30% drop chance par mob mort, item visible (cercle coloré) au sol → marche dessus → toast "Picked up: Healing Potion / Burn Out / Gold"
+- **+N XP** floating text à chaque mob tué
+- Tous les acquis M0-M4 (FPS overlay, drag/zoom, camera follow `C`, exits, combat)
+- 17 tests passent (4 iso + 5 ECS + 4 combat + 4 loot)
 
 **Ce qui n'existe pas encore :**
 
-- Aucun HUD (HP bar, mini-map, hotbar)
-- Aucun audio
-- Aucune sauvegarde
-- 1 seul mob spawné (les 4 types sont définis dans `data/balance.ts` mais seul Berserk Mouse a une factory en M4)
-- Pas d'IA différenciée par mob (tous les mobs M5 ont juste l'aggro basique)
-- Pas d'asset graphique réel
+- Aucun HUD (HP bar, mini-map, hotbar) — M6
+- Items pickés ne font rien sur Dart (juste log) — pas d'inventaire ni soin
+- Aucun audio (M7)
+- Aucune sauvegarde (M7)
+- Pas d'asset graphique réel (M6/M8)
 
 ---
 
@@ -90,10 +91,11 @@
 
 ### `src/data/` — données statiques + maths pures
 
-| Fichier                                       | Rôle                                                                                                                                                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [src/data/props.ts](../src/data/props.ts)     | 4 prop kinds (tree/rock/log/roots) avec sprite + blocks.                                                                                                                                                      |
-| [src/data/balance.ts](../src/data/balance.ts) | **M4.** `COMBAT` (variance, defendingDamageMul, minDamage). `PLAYER_BASE` (HP 100, ATK 12, DEF 3, atkSpeed 1.5, range 80). `MOBS` (4 types). Fonction pure `computeDamage(atk, def, roll, defending)` testée. |
+| Fichier                                       | Rôle                                                                                                                                                                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/data/props.ts](../src/data/props.ts)     | 4 prop kinds (tree/rock/log/roots) avec sprite + blocks.                                                                                                                                                               |
+| [src/data/balance.ts](../src/data/balance.ts) | **M4.** `COMBAT` (variance, defendingDamageMul, minDamage). `PLAYER_BASE` (HP 100, ATK 12, DEF 3, atkSpeed 1.5, range 80). `MOBS` (4 types). Fonction pure `computeDamage(atk, def, roll, defending)` testée.          |
+| [src/data/items.ts](../src/data/items.ts)     | **M5.** 3 items (Healing Potion / Burn Out / Gold) avec sprite + weight + nameKey i18n. `DROP_CHANCE = 0.3`. Fonction pure `rollLoot(rollDrop, rollKind)` testée (4 tests). `itemSpriteComponent(kind, layer)` helper. |
 
 ### `src/rendering/` — couche Pixi pure
 
@@ -109,7 +111,7 @@
 
 ### `src/gameplay/` — logique de jeu (ECS)
 
-**15 components** dans [src/gameplay/components/](../src/gameplay/components/) :
+**17 components** dans [src/gameplay/components/](../src/gameplay/components/) :
 
 | Component          | Forme                                                                                  | Usage                                |
 | ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------ |
@@ -128,29 +130,33 @@
 | **AttackCooldown** | `{ remainingMs }`                                                                      | M4 : décrémenté par CooldownSystem.  |
 | **Defending**      | marker                                                                                 | M4 : actif tant que `S` est tenu.    |
 | **FloatingText**   | `{ text, color, elapsedMs, durationMs }`                                               | M4 : nombre flottant éphémère.       |
+| **AI**             | `{ behavior: 'mouse' \| 'goblin' \| 'cock' \| 'trent' }`                               | M5 : route vers handler AISystem.    |
+| **Item**           | `{ kind: ItemKind }`                                                                   | M5 : entité picable au sol.          |
 
 **Entity factories** [src/gameplay/entities/](../src/gameplay/entities/) :
 
-| Fichier                                                               | Rôle                                                                                                              |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [player.ts](../src/gameplay/entities/player.ts)                       | Dart : Player + Position + Velocity + Speed + Pathfinder + Sprite + **Health + Stats + Faction + AttackCooldown** |
-| [props/index.ts](../src/gameplay/entities/props/index.ts)             | `spawnProp` générique (tree/rock/log/roots).                                                                      |
-| [props/exit.ts](../src/gameplay/entities/props/exit.ts)               | `spawnExit` (Position + Exit).                                                                                    |
-| [mobs/berserkMouse.ts](../src/gameplay/entities/mobs/berserkMouse.ts) | **M4.** Berserk Mouse complet (HP 20, ATK 5, DEF 1).                                                              |
-| [floatingText.ts](../src/gameplay/entities/floatingText.ts)           | **M4.** `spawnFloatingText({ x, y, text, color?, durationMs? })`.                                                 |
+| Fichier                                                     | Rôle                                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [player.ts](../src/gameplay/entities/player.ts)             | Dart : Player + Position + Velocity + Speed + Pathfinder + Sprite + **Health + Stats + Faction + AttackCooldown** |
+| [props/index.ts](../src/gameplay/entities/props/index.ts)   | `spawnProp` générique (tree/rock/log/roots).                                                                      |
+| [props/exit.ts](../src/gameplay/entities/props/exit.ts)     | `spawnExit` (Position + Exit).                                                                                    |
+| [mobs/index.ts](../src/gameplay/entities/mobs/index.ts)     | **M5.** `spawnMob(world, kind, gx, gy)` — assemble n'importe quel mob via KIND_TO_BEHAVIOR + MOBS de balance.ts.  |
+| [floatingText.ts](../src/gameplay/entities/floatingText.ts) | **M4.** `spawnFloatingText({ x, y, text, color?, durationMs? })`.                                                 |
+| [items.ts](../src/gameplay/entities/items.ts)               | **M5.** `spawnItem(world, kind, x, y)` — Position + Sprite (layer fx) + Item.                                     |
 
 **Systems** [src/gameplay/systems/](../src/gameplay/systems/) :
 
-| System             | Rôle                                                                                                                                                                 |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PathfindingSystem  | easystarjs sur la grille de collision.                                                                                                                               |
-| MovementSystem     | Suit waypoints à vitesse constante.                                                                                                                                  |
-| ExitSystem         | Trigger sur cellule d'Exit, anti-spam.                                                                                                                               |
-| **CooldownSystem** | M4. Décrémente `AttackCooldown.remainingMs`.                                                                                                                         |
-| **MobAggroSystem** | M4. Ennemis sans intent picks closest player in aggroRange.                                                                                                          |
-| **CombatSystem**   | M4. Pour chaque entité avec CombatIntent : si target hors range, refresh path (rate-limited 100ms) ; sinon stop + attack on cooldown ; clear intent si target morte. |
-| **DefenseSystem**  | M4. Sync `sprite.scale` selon Defending, freeze movement quand defending.                                                                                            |
-| **DeathSystem**    | M4. Scan entités HP≤0. Player → fire `onPlayerDeath` (single-fire). Mob → spawn floating XP text + `destroyEntity`. Reçoit `mobKindResolver` pour XP.                |
+| System               | Rôle                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PathfindingSystem    | easystarjs sur la grille de collision.                                                                                                                                         |
+| MovementSystem       | Suit waypoints à vitesse constante.                                                                                                                                            |
+| ExitSystem           | Trigger sur cellule d'Exit, anti-spam.                                                                                                                                         |
+| **CooldownSystem**   | M4. Décrémente `AttackCooldown.remainingMs`.                                                                                                                                   |
+| **AISystem**         | **M5 (replaces MobAggroSystem).** Per-behavior dispatcher. mouse=aggro 256px+flee<30%HP. goblin/trent=standard melee. cock=aggro 320px, retreat 200px tant que cooldown > 50%. |
+| **CombatSystem**     | M4. Pour chaque entité avec CombatIntent : si target hors range, refresh path (rate-limited 100ms) ; sinon stop + attack on cooldown ; clear intent si target morte.           |
+| **DefenseSystem**    | M4. Sync `sprite.scale` selon Defending, freeze movement quand defending.                                                                                                      |
+| **DeathSystem**      | M4 + **M5**. Scan entités HP≤0. Player → fire `onPlayerDeath` (single-fire). Mob → spawn `+XP` text + `rollLoot()` → spawn item entity au sol + `destroyEntity`.               |
+| **ItemPickupSystem** | **M5.** Player à ≤36px d'un Item entity → fire `onPickup({ kind })`, destroy item.                                                                                             |
 
 **Controls** [src/gameplay/controls/](../src/gameplay/controls/) :
 
@@ -315,6 +321,22 @@ Layout TLoD-fidèle, 52 props, 2 exits (DemoEnd + Path overgrown blocked), Toast
 - ForestScene : intégration combat complète, mobKinds Map, listeners
 - 4 tests sur `computeDamage`
 
-### M5 — Mobs et IA ⏳
+### M5 — Mobs et IA ✅
 
-À faire : factories Goblin/AssassinCock/Trent, AI per-kind (Berserk Mouse fuit en dessous de 30%, Cock hit-and-run, Trent slow tank), spawn manager 5-8 mobs sur la map, loot table simple (XP toujours + drops).
+**Fonctionnel :** 6 mobs sur la map (mix de 4 types), IA per-kind, loot drops + pickup.
+**Créé :**
+
+- 2 nouveaux components : AI (`{ behavior }`), Item (`{ kind }`)
+- `data/items.ts` : 3 items + DROP_CHANCE 0.3 + `rollLoot` testée (4 tests)
+- `gameplay/entities/items.ts` : `spawnItem`
+- `gameplay/entities/mobs/index.ts` : `spawnMob` dispatcher générique (KIND_TO_BEHAVIOR + MOBS) — remplace l'ancien berserkMouse.ts isolé
+- `gameplay/systems/AISystem.ts` : per-behavior dispatcher avec helpers `setFleeTarget`, `clamp`. Remplace `MobAggroSystem.ts` (supprimé).
+- `gameplay/systems/ItemPickupSystem.ts` : pickup auto à 36px
+- `DeathSystem` mis à jour : roll loot + spawn item entity
+- `map.json` : nouveau champ `mobs[]` (6 entrées). `MapLoader` expose `MapMob`.
+- `ForestScene` : spawn mobs depuis map.json, swap MobAggroSystem→AISystem, ajoute ItemPickupSystem (wire onPickup→toast)
+- i18n keys : items.\* + pickups.picked (avec interpolation `{item}`)
+
+### M6 — HUD + assets phase 2 ⏳
+
+À faire : HUD (HP/SP bar, hotbar, mini-map, ZoneTitle, ActionLog), placeholder Merchant, swap placeholders géométriques par packs gratuits iso fantasy.

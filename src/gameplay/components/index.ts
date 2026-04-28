@@ -1,3 +1,4 @@
+import type { AI } from './AI';
 import type { AttackCooldown } from './AttackCooldown';
 import type { Collider } from './Collider';
 import type { CombatIntent } from './CombatIntent';
@@ -6,6 +7,7 @@ import type { Exit } from './Exit';
 import type { Faction } from './Faction';
 import type { FloatingText } from './FloatingText';
 import type { Health } from './Health';
+import type { Item } from './Item';
 import type { Pathfinder } from './Pathfinder';
 import type { Player } from './Player';
 import type { Position } from './Position';
@@ -31,11 +33,14 @@ export interface Components {
   AttackCooldown: AttackCooldown;
   Defending: Defending;
   FloatingText: FloatingText;
+  AI: AI;
+  Item: Item;
 }
 
 export type ComponentName = keyof Components;
 
 export type {
+  AI,
   AttackCooldown,
   Collider,
   CombatIntent,
@@ -44,6 +49,7 @@ export type {
   Faction,
   FloatingText,
   Health,
+  Item,
   Pathfinder,
   Player,
   Position,
@@ -52,6 +58,7 @@ export type {
   Stats,
   Velocity,
 };
+export type { AIBehavior } from './AI';
 export type { GridCell, WorldPoint } from './Pathfinder';
 export type { SpriteLayer, SpriteShape } from './Sprite';
 export type { FactionSide } from './Faction';

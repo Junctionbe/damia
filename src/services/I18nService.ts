@@ -9,6 +9,10 @@ const TRANSLATIONS: Record<string, string> = {
   'exits.demoEndSubtitle': 'Hellena Prison ahead',
   'gameOver.title': 'You died',
   'gameOver.subtitle': 'Press R to restart',
+  'items.healingPotion': 'Healing Potion',
+  'items.burnOut': 'Burn Out',
+  'items.gold': 'Gold',
+  'pickups.picked': 'Picked up: {item}',
 };
 
 export function t(key: string, params?: Record<string, string | number>): string {

@@ -155,15 +155,18 @@
 
 **Tâches :**
 
-- [ ] 4 entity factories : `berserkMouse`, `goblin`, `assassinCock`, `trent`
-- [ ] Component `AI` (state, target, aggroRange, etc.)
-- [ ] `AISystem` : machine à états simple
-  - **Berserk Mouse** : aggro très court, charge, fuit en dessous de 30% HP
-  - **Goblin** : aggro moyen, attaque mêlée standard
-  - **Assassin Cock** : aggro longue distance, hit-and-run (frappe puis recule)
-  - **Trent** : aggro court, lent, gros dégâts
-- [ ] Spawn manager : positionne les mobs selon `map.json`
-- [ ] Loot table simple : XP toujours + 30% chance Healing Potion / Burn Out / Gold
+- [x] Generic `spawnMob(world, kind, gx, gy)` dispatcher dans `gameplay/entities/mobs/index.ts` (utilise MOBS de balance.ts)
+- [x] Component `AI` (`{ behavior }` — state dérivé des autres components)
+- [x] `AISystem` : dispatcher per-behavior
+  - **Berserk Mouse** : aggro 256px, fuit vers cellule opposée à 320px sous 30% HP
+  - **Goblin/Trent** : standard melee aggro (Trent lent + tank via stats)
+  - **Assassin Cock** : aggro 320px, hit-and-run — retire à 200px tant que cooldown > 50%
+- [x] Spawn manager : `map.json` a `mobs[]` (6 entrées : 2 mice, 2 goblins, 1 cock, 1 trent), MapLoader expose `MapMob`
+- [x] `data/items.ts` : 3 kinds (Healing Potion / Burn Out / Gold) + `rollLoot(rollDrop, rollKind)` testé (4 tests)
+- [x] DeathSystem mis à jour : roll `Math.random()` au death, spawn Item entity si drop
+- [x] `ItemPickupSystem` : pickup auto à 36px, fire onPickup
+- [x] ForestScene wire onPickup → toast `t('pickups.picked', { item: t(items.X) })`
+- [x] i18n keys : items.\* + pickups.picked (interpolation `{item}`)
 
 **Done quand :**
 
@@ -297,7 +300,7 @@
 | M2    | ✅ done    | ECS + Dart + clic-to-move + pathfinding + camera follow |
 | M3    | ✅ done    | Forêt + collisions + exits (DemoEnd/Path overgrown)     |
 | M4    | ✅ done    | Combat MVP : HP/ATK/DEF, attaque, défense, Game Over    |
-| M5    | ⏳ pending | Prêt à démarrer                                         |
-| M6    | —          |                                                         |
+| M5    | ✅ done    | 6 mobs sur la map, IA per-kind, loot tables             |
+| M6    | ⏳ pending | Prêt à démarrer                                         |
 | M7    | —          |                                                         |
 | M8    | —          |                                                         |

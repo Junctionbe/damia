@@ -13,25 +13,25 @@ import type { Components } from '@gameplay/components';
 import { spawnPlayer } from '@gameplay/entities/player';
 import { spawnProp } from '@gameplay/entities/props';
 import { spawnExit } from '@gameplay/entities/props/exit';
-import { spawnBerserkMouse } from '@gameplay/entities/mobs';
+import { spawnMob } from '@gameplay/entities/mobs';
 import { InputController } from '@gameplay/controls/InputController';
 import { PathfindingSystem } from '@gameplay/systems/PathfindingSystem';
 import { MovementSystem } from '@gameplay/systems/MovementSystem';
 import { ExitSystem } from '@gameplay/systems/ExitSystem';
 import { CooldownSystem } from '@gameplay/systems/CooldownSystem';
 import { CombatSystem } from '@gameplay/systems/CombatSystem';
-import { MobAggroSystem } from '@gameplay/systems/MobAggroSystem';
+import { AISystem } from '@gameplay/systems/AISystem';
 import { DefenseSystem } from '@gameplay/systems/DefenseSystem';
 import { DeathSystem } from '@gameplay/systems/DeathSystem';
+import { ItemPickupSystem } from '@gameplay/systems/ItemPickupSystem';
 import { ForestMap, buildCollisionGrid } from './MapLoader';
 import { propBlocks } from '@data/props';
 import type { MobKind } from '@data/balance';
+import { ITEMS } from '@data/items';
 import { Toast } from '@ui/Toast';
 import { t } from '@services/I18nService';
 import { DemoEndScene } from '@scenes/DemoEndScene';
 import { GameOverScene } from '@scenes/GameOverScene';
-
-const TEST_MOB_CELL = { gx: 16, gy: 10 } as const;
 
 export class ForestScene implements Scene {
   readonly name = 'forest';
@@ -70,38 +70,35 @@ export class ForestScene implements Scene {
 
     this.world = new World<Components>();
     this.playerId = spawnPlayer(this.world, map.spawn);
-    for (const prop of map.props) {
-      spawnProp(this.world, prop);
+    for (const prop of map.props) spawnProp(this.world, prop);
+    for (const exit of map.exits) spawnExit(this.world, exit);
+    for (const mob of map.mobs) {
+      const id = spawnMob(this.world, mob.kind, mob.gx, mob.gy);
+      this.mobKinds.set(id, mob.kind);
     }
-    for (const exit of map.exits) {
-      spawnExit(this.world, exit);
-    }
-
-    // M4 test mob — one Berserk Mouse on the main path, blocking Dart's way south.
-    const mouseId = spawnBerserkMouse(this.world, TEST_MOB_CELL.gx, TEST_MOB_CELL.gy);
-    this.mobKinds.set(mouseId, 'berserkMouse');
 
     const collisionGrid = buildCollisionGrid(map, propBlocks);
     const pathfinding = new PathfindingSystem(collisionGrid);
     const movement = new MovementSystem();
     const cooldown = new CooldownSystem();
-    const aggro = new MobAggroSystem();
+    const ai = new AISystem({ width: map.size.w, height: map.size.h });
     const combat = new CombatSystem();
     const defense = new DefenseSystem();
     const exits = new ExitSystem();
     const death = new DeathSystem((id) => this.mobKinds.get(id) ?? null);
+    const pickup = new ItemPickupSystem();
     const render = new RenderSystem(this.layers);
     const floating = new FloatingTextSystem(this.layers.fx);
-    // Update order: input(input handlers) → AI → cooldowns → combat (sets paths) → pathfinding → movement → exits → defense → death → render → floating
     this.systems = [
       cooldown,
-      aggro,
+      ai,
       combat,
       pathfinding,
       movement,
       exits,
       defense,
       death,
+      pickup,
       render,
       floating,
     ];
@@ -124,6 +121,10 @@ export class ForestScene implements Scene {
       });
     });
 
+    pickup.onPickup(({ kind }) => {
+      this.toast?.show(t('pickups.picked', { item: t(ITEMS[kind].nameKey) }));
+    });
+
     const playerWorld = gridToWorld(map.spawn.gx, map.spawn.gy);
     this.viewport.moveCenter(playerWorld.x, playerWorld.y);
 
@@ -136,10 +137,8 @@ export class ForestScene implements Scene {
 
     this.input.onClick((cmd) => {
       if (!this.world || this.playerId === null) return;
-      // Defending freezes input.
       if (this.world.hasComponent(this.playerId, 'Defending')) return;
 
-      // Left click: try to engage an enemy at the clicked cell, else move.
       if (cmd.button === 'left') {
         const target = this.findEnemyAtCell(cmd.gx, cmd.gy);
         if (target !== null) {
@@ -147,7 +146,6 @@ export class ForestScene implements Scene {
           return;
         }
       }
-      // Move (left on empty cell, or right click anywhere).
       this.world.removeComponent(this.playerId, 'CombatIntent');
       const pf = this.world.getComponent(this.playerId, 'Pathfinder');
       if (pf) {

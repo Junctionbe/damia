@@ -1,16 +1,18 @@
 import type { System, World } from '@core/ecs';
 import type { Components } from '@gameplay/components';
 import { spawnFloatingText } from '@gameplay/entities/floatingText';
+import { spawnItem } from '@gameplay/entities/items';
 import { MOBS, type MobKind } from '@data/balance';
+import { rollLoot } from '@data/items';
 
 export type PlayerDeathListener = () => void;
 
 /**
  * Sweeps entities at or below 0 HP. Players trigger Game Over (via listener).
- * Other entities are destroyed and yield XP (placeholder: floating "+N XP" text).
+ * Other entities are destroyed and yield XP + a chance for a loot drop.
  *
- * For M4 the only mob spawned is `berserkMouse`; the optional `mobKindResolver`
- * lets the scene tell us what kind a given entity was so we award the right XP.
+ * `mobKindResolver` is provided by the scene so we know what XP value / loot
+ * table to use per mob.
  */
 export class DeathSystem implements System<Components> {
   private listener: PlayerDeathListener | null = null;
@@ -32,20 +34,26 @@ export class DeathSystem implements System<Components> {
           this.playerDeathFired = true;
           this.listener?.();
         }
-        continue; // Don't destroy the player entity here; the scene transition takes over.
+        continue;
       }
 
       const pos = world.getComponent(id, 'Position');
       const mobKind = this.mobKindResolver?.(id) ?? null;
-      const xp = mobKind ? MOBS[mobKind].xp : 0;
-      if (pos && xp > 0) {
-        spawnFloatingText(world, {
-          x: pos.x,
-          y: pos.y,
-          text: `+${xp} XP`,
-          color: 0xffe27a,
-          durationMs: 1100,
-        });
+      if (pos && mobKind) {
+        const xp = MOBS[mobKind].xp;
+        if (xp > 0) {
+          spawnFloatingText(world, {
+            x: pos.x,
+            y: pos.y,
+            text: `+${xp} XP`,
+            color: 0xffe27a,
+            durationMs: 1100,
+          });
+        }
+        const loot = rollLoot(Math.random(), Math.random());
+        if (loot) {
+          spawnItem(world, loot, pos.x, pos.y);
+        }
       }
       world.destroyEntity(id);
     }

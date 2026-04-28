@@ -1,4 +1,5 @@
 import type { PropKind } from '@data/props';
+import type { MobKind } from '@data/balance';
 import rawMap from './map.json';
 
 export interface MapPathZone {
@@ -18,6 +19,12 @@ import type { Exit } from '@gameplay/components';
 
 export type MapExit = Exit;
 
+export interface MapMob {
+  kind: MobKind;
+  gx: number;
+  gy: number;
+}
+
 export interface MapData {
   name: string;
   size: { w: number; h: number };
@@ -25,6 +32,7 @@ export interface MapData {
   pathZones: MapPathZone[];
   props: MapProp[];
   exits: MapExit[];
+  mobs: MapMob[];
 }
 
 const WALKABLE = 0;

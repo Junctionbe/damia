@@ -63,5 +63,13 @@
   "exits": [
     { "kind": "transition", "gx": 16, "gy": 31, "targetScene": "demo-end" },
     { "kind": "blocked", "gx": 0, "gy": 16, "messageKey": "exits.westPathOvergrown" }
+  ],
+  "mobs": [
+    { "kind": "berserkMouse", "gx": 16, "gy": 9 },
+    { "kind": "goblin", "gx": 14, "gy": 16 },
+    { "kind": "berserkMouse", "gx": 4, "gy": 16 },
+    { "kind": "assassinCock", "gx": 19, "gy": 17 },
+    { "kind": "trent", "gx": 16, "gy": 24 },
+    { "kind": "goblin", "gx": 17, "gy": 28 }
   ]
 }
