@@ -52,7 +52,8 @@ export const MOBS: Record<MobKind, MobDefinition> = {
     health: 50,
     speed: 0.06,
     stats: { atk: 12, def: 6, atkSpeed: 0.5, range: 80, aggroRange: 192 },
-    sprite: { shape: 'tree', color: 0x4a6a3a, width: 56, height: 80 },
+    // Foliage tinted blood-red so Trent (living mob) is unmistakable from decorative trees.
+    sprite: { shape: 'tree', color: 0x8a2a2a, width: 56, height: 80 },
     xp: 15,
   },
 } as const;

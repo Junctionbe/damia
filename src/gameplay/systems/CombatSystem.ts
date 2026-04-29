@@ -3,6 +3,7 @@ import { worldToGrid } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
 import { COMBAT, computeDamage } from '@data/balance';
 import { spawnFloatingText } from '@gameplay/entities/floatingText';
+import { playSfx } from '@services/AudioManager';
 
 const TARGET_RECHECK_MS = 100;
 
@@ -81,6 +82,9 @@ export class CombatSystem implements System<Components> {
         text: String(dmg),
         color: defending ? 0x9bb6ff : 0xff6b6b,
       });
+
+      playSfx('combat.swing');
+      playSfx('combat.hit');
     }
   }
 

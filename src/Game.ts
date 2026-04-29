@@ -3,6 +3,8 @@ import { createRenderer, describeRenderer } from '@rendering/Renderer';
 import { DebugOverlay } from '@rendering/debug/DebugOverlay';
 import { SceneManager } from '@scenes/SceneManager';
 import { BootScene } from '@scenes/BootScene';
+import { initI18n } from '@services/I18nService';
+import { initAudioManager } from '@services/AudioManager';
 
 export interface GameContext {
   app: Application;
@@ -17,14 +19,16 @@ export class Game {
   private debug!: DebugOverlay;
 
   async start(mountInto: HTMLElement): Promise<void> {
+    // Bootstrap services that the rest of the app depends on.
+    await initI18n();
+    initAudioManager();
+
     this.app = await createRenderer({ background: BACKGROUND_COLOR });
     mountInto.appendChild(this.app.canvas);
 
     this.scenes = new SceneManager();
     const ctx: GameContext = { app: this.app, scenes: this.scenes };
 
-    // Use zIndex sorting so the debug overlay stays above any scene content,
-    // regardless of when scenes mount/unmount their own children on the stage.
     this.app.stage.sortableChildren = true;
 
     this.debug = new DebugOverlay(describeRenderer(this.app));

@@ -4,6 +4,7 @@ import { spawnFloatingText } from '@gameplay/entities/floatingText';
 import { spawnItem } from '@gameplay/entities/items';
 import { MOBS, type MobKind } from '@data/balance';
 import { rollLoot } from '@data/items';
+import { playSfx } from '@services/AudioManager';
 
 export type PlayerDeathListener = () => void;
 
@@ -55,6 +56,7 @@ export class DeathSystem implements System<Components> {
           spawnItem(world, loot, pos.x, pos.y);
         }
       }
+      playSfx('combat.death');
       world.destroyEntity(id);
     }
   }

@@ -1,0 +1,51 @@
+{
+  "title": {
+    "name": "DAMIA",
+    "subtitle": "TLoD secret project",
+    "newGame": "New Game",
+    "continue": "Continue",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "Settings",
+    "master": "Master volume",
+    "music": "Music volume",
+    "sfx": "SFX volume",
+    "language": "Language",
+    "resume": "Resume",
+    "quitToTitle": "Quit to Title"
+  },
+  "exits": {
+    "westPathOvergrown": "Path overgrown.",
+    "demoEndTitle": "Demo End",
+    "demoEndSubtitle": "Hellena Prison ahead"
+  },
+  "gameOver": {
+    "title": "You died",
+    "subtitle": "Press R to restart"
+  },
+  "items": {
+    "healingPotion": "Healing Potion",
+    "burnOut": "Burn Out",
+    "gold": "Gold"
+  },
+  "pickups": {
+    "picked": "Picked up: {{item}}"
+  },
+  "hud": {
+    "dart": "DART"
+  },
+  "zones": {
+    "forestOfSeles": {
+      "name": "Forest of Seles",
+      "objective": "Find Hellena Prison"
+    }
+  },
+  "interactables": {
+    "merchantComingSoon": "Merchant — Coming soon"
+  },
+  "log": {
+    "xpGained": "+{{xp}} XP",
+    "itemPicked": "Picked up: {{item}}"
+  }
+}

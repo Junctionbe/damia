@@ -209,15 +209,17 @@
 
 **Tâches :**
 
-- [ ] `services/AudioManager.ts` complet (howler wrapper)
-- [ ] Charger 1 musique d'ambiance forêt (OST TLoD si dispo, fade in/out)
-- [ ] SFX : pas, swing épée, hit, mob death, item pickup, ui_click
-- [ ] Master/music/sfx volume sliders dans menu options minimal (touche `Esc`)
-- [ ] `services/I18nService.ts` : i18next bootstrap
-- [ ] Tous textes via `t()`, fichiers `locales/en.json` + `locales/fr.json` (FR vide ou auto-traduit pour test)
-- [ ] Toggle langue dans menu options
-- [ ] `services/SaveManager.ts` : auto-save à transition zone, mort, `visibilitychange`
-- [ ] Bouton "Continue" sur menu si save existe
+- [x] `services/AudioManager.ts` : Web Audio synthétisé (zéro fichier externe), volumes persistés dans localStorage. API music présente mais no-op tant qu'aucun OST n'est wireé.
+- [x] SFX : combat.swing, combat.hit, combat.death, items.pickup, ui.click — synthétisés via OscillatorNode + noise burst
+- [x] Master/music/sfx : 3 sliders +/- (10% step) dans `SettingsPanel` (touche `Esc`)
+- [x] `services/I18nService.ts` : **i18next + LanguageDetector** (localStorage `damia.lang`), async `initI18n()` au bootstrap, API `t(key, params?)` préservée, `setLanguage()` reload la page
+- [x] `locales/en.json` + `locales/fr.json` complets (toutes les clés des jalons précédents migrées + 5 nouvelles pour title/settings)
+- [x] Toggle langue dans SettingsPanel (boutons `<` / `>` cyclent EN ↔ FR)
+- [x] `services/SaveManager.ts` : localStorage `damia.save` schemaVersion=1, auto-save sur visibilitychange hidden + sortie south + Quit-to-Title. Skip + clear sur mort.
+- [x] `TitleScene` (nouvelle) : titre + sous-titre + boutons New Game / Continue (greyed si pas de save).
+- [x] AudioContext unlock au premier pointerdown (browser policy)
+- [x] BootScene → TitleScene (au lieu de ForestScene direct)
+- [x] Pause world updates quand SettingsPanel ouvert
 
 **Done quand :**
 
@@ -299,5 +301,5 @@
 | M4    | ✅ done    | Combat MVP : HP/ATK/DEF, attaque, défense, Game Over    |
 | M5    | ✅ done    | 6 mobs sur la map, IA per-kind, loot tables             |
 | M6    | ✅ done    | HUD complet (HP/SP, hotbar, minimap, zone title, log)   |
-| M7    | ⏳ pending | Prêt à démarrer                                         |
-| M8    | —          |                                                         |
+| M7    | ✅ done    | Audio synth + i18next EN/FR + Save/Continue + Settings  |
+| M8    | ⏳ pending | Prêt à démarrer                                         |

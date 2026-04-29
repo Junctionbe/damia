@@ -1,14 +1,14 @@
 import type { GameContext } from '@/Game';
 import type { Scene } from './Scene';
-import { ForestScene } from './ForestOfSeles/ForestScene';
+import { TitleScene } from './TitleScene';
 
 export class BootScene implements Scene {
   readonly name = 'boot';
 
   async enter(ctx: GameContext): Promise<void> {
-    // M1: nothing to load yet, immediately switch to forest.
-    // Future: AssetManager preloads here.
-    await ctx.scenes.switchTo(new ForestScene(), ctx);
+    // M7: i18n + audio are bootstrapped in Game.start before we get here.
+    // Future: AssetManager preloads zone tiles / spritesheets here.
+    await ctx.scenes.switchTo(new TitleScene(), ctx);
   }
 
   exit(): void {}

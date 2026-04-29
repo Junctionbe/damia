@@ -7,11 +7,15 @@ import { PLAYER_BASE } from '@data/balance';
 export interface SpawnPlayerOptions {
   gx: number;
   gy: number;
+  /** Override starting HP (clamped to max). Defaults to PLAYER_BASE.health. */
+  hp?: number;
 }
 
 export function spawnPlayer(world: World<Components>, opts: SpawnPlayerOptions): Entity {
   const { x, y } = gridToWorld(opts.gx, opts.gy);
   const id = world.createEntity();
+  const max = PLAYER_BASE.health;
+  const startHp = Math.max(1, Math.min(max, opts.hp ?? max));
 
   world.addComponent(id, 'Player', {});
   world.addComponent(id, 'Position', { x, y });
@@ -28,8 +32,8 @@ export function spawnPlayer(world: World<Components>, opts: SpawnPlayerOptions):
     AssetManager.toSpriteComponent('sprite.player.dart', 'entities'),
   );
   world.addComponent(id, 'Health', {
-    current: PLAYER_BASE.health,
-    max: PLAYER_BASE.health,
+    current: startHp,
+    max,
     invulnUntilMs: 0,
   });
   world.addComponent(id, 'Stats', { ...PLAYER_BASE.stats });

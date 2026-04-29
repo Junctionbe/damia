@@ -36,9 +36,13 @@ import { Hotbar } from '@ui/Hotbar';
 import { MiniMap } from '@ui/MiniMap';
 import { ZoneTitle } from '@ui/ZoneTitle';
 import { ActionLog } from '@ui/ActionLog';
+import { SettingsPanel } from '@ui/SettingsPanel';
 import { t } from '@services/I18nService';
+import { playSfx } from '@services/AudioManager';
+import { SaveManager, type SaveDataV1 } from '@services/SaveManager';
 import { DemoEndScene } from '@scenes/DemoEndScene';
 import { GameOverScene } from '@scenes/GameOverScene';
+import { TitleScene } from '@scenes/TitleScene';
 
 const PLAYER_SP_MAX = 100;
 
@@ -57,9 +61,14 @@ export class ForestScene implements Scene {
   private minimap: MiniMap | null = null;
   private zoneTitle: ZoneTitle | null = null;
   private actionLog: ActionLog | null = null;
+  private settings: SettingsPanel | null = null;
   private playerId: Entity | null = null;
   private cameraFollow = false;
   private mobKinds = new Map<Entity, MobKind>();
+  private playerDied = false;
+  private cleanups: Array<() => void> = [];
+
+  constructor(private readonly saveData: SaveDataV1 | null = null) {}
 
   enter(ctx: GameContext): void {
     const map = ForestMap;
@@ -83,7 +92,16 @@ export class ForestScene implements Scene {
     this.layers.ground.addChild(this.tilemap.container);
 
     this.world = new World<Components>();
-    this.playerId = spawnPlayer(this.world, map.spawn);
+    const spawn = this.saveData
+      ? { gx: this.saveData.player.gx, gy: this.saveData.player.gy }
+      : map.spawn;
+    const startHp = this.saveData?.player.hp;
+    this.playerId = spawnPlayer(this.world, {
+      gx: spawn.gx,
+      gy: spawn.gy,
+      ...(startHp !== undefined ? { hp: startHp } : {}),
+    });
+
     for (const prop of map.props) spawnProp(this.world, prop);
     for (const exit of map.exits) spawnExit(this.world, exit);
     for (const mob of map.mobs) {
@@ -122,8 +140,6 @@ export class ForestScene implements Scene {
       floating,
     ];
 
-    // UI overlays mounted on layers.ui (which is on the stage, NOT the viewport,
-    // so they don't pan/zoom with the camera).
     this.toast = new Toast(ctx.app, this.layers.ui);
     this.hud = new Hud(ctx.app);
     this.hotbar = new Hotbar(ctx.app);
@@ -134,18 +150,31 @@ export class ForestScene implements Scene {
     });
     this.zoneTitle = new ZoneTitle(ctx.app);
     this.actionLog = new ActionLog(ctx.app);
+    this.settings = new SettingsPanel(ctx.app);
     this.layers.ui.addChild(
       this.hud.container,
       this.hotbar.container,
       this.minimap.container,
       this.zoneTitle.container,
       this.actionLog.container,
+      this.settings.container,
     );
 
     this.zoneTitle.show(t('zones.forestOfSeles.name'), t('zones.forestOfSeles.objective'));
 
+    this.settings.onAction((action) => {
+      this.settings?.hide();
+      if (action === 'quit-to-title') {
+        this.persist();
+        queueMicrotask(() => {
+          void ctx.scenes.switchTo(new TitleScene(), ctx);
+        });
+      }
+    });
+
     exits.onTrigger(({ exit }) => {
       if (exit.kind === 'transition' && exit.targetScene === 'demo-end') {
+        this.persist();
         queueMicrotask(() => {
           void ctx.scenes.switchTo(new DemoEndScene(), ctx);
         });
@@ -159,16 +188,20 @@ export class ForestScene implements Scene {
     });
 
     death.onPlayerDeath(() => {
+      this.playerDied = true;
+      // Wipe save so "Continue" doesn't restore a doomed state.
+      SaveManager.clear();
       queueMicrotask(() => {
         void ctx.scenes.switchTo(new GameOverScene(), ctx);
       });
     });
 
     pickup.onPickup(({ kind }) => {
+      playSfx('items.pickup');
       this.actionLog?.push(t('log.itemPicked', { item: t(ITEMS[kind].nameKey) }));
     });
 
-    const playerWorld = gridToWorld(map.spawn.gx, map.spawn.gy);
+    const playerWorld = gridToWorld(spawn.gx, spawn.gy);
     this.viewport.moveCenter(playerWorld.x, playerWorld.y);
 
     this.input = new InputController({
@@ -180,6 +213,7 @@ export class ForestScene implements Scene {
 
     this.input.onClick((cmd) => {
       if (!this.world || this.playerId === null) return;
+      if (this.settings?.isOpen) return;
       if (this.world.hasComponent(this.playerId, 'Defending')) return;
 
       if (cmd.button === 'left') {
@@ -200,19 +234,25 @@ export class ForestScene implements Scene {
 
     this.input.onDefendChange((active) => {
       if (!this.world || this.playerId === null) return;
-      if (active) {
-        this.world.addComponent(this.playerId, 'Defending', {});
-      } else {
-        this.world.removeComponent(this.playerId, 'Defending');
-      }
+      if (active) this.world.addComponent(this.playerId, 'Defending', {});
+      else this.world.removeComponent(this.playerId, 'Defending');
     });
 
     this.input.onCameraFollowToggle((on) => {
       this.cameraFollow = on;
     });
+
+    // Auto-save when the user leaves the tab.
+    const onVisibility = (): void => {
+      if (document.hidden) this.persist();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    this.cleanups.push(() => document.removeEventListener('visibilitychange', onVisibility));
   }
 
   exit(ctx: GameContext): void {
+    for (const c of this.cleanups) c();
+    this.cleanups.length = 0;
     this.toast?.destroy();
     this.toast = null;
     this.hud?.destroy();
@@ -225,6 +265,8 @@ export class ForestScene implements Scene {
     this.zoneTitle = null;
     this.actionLog?.destroy();
     this.actionLog = null;
+    this.settings?.destroy();
+    this.settings = null;
     this.input?.destroy();
     this.input = null;
     for (const sys of this.systems) sys.destroy?.();
@@ -247,6 +289,10 @@ export class ForestScene implements Scene {
 
   update(dt: number): void {
     if (!this.world) return;
+    if (this.settings?.isOpen) {
+      // Pause world updates but still tick render so UI stays interactive.
+      return;
+    }
     for (const sys of this.systems) {
       if (!this.world) break;
       sys.update(dt, this.world);
@@ -264,6 +310,23 @@ export class ForestScene implements Scene {
       const pos = this.world.getComponent(this.playerId, 'Position');
       if (pos) this.viewport.moveCenter(pos.x, pos.y);
     }
+  }
+
+  private persist(): void {
+    if (this.playerDied || !this.world || this.playerId === null) return;
+    const hp = this.world.getComponent(this.playerId, 'Health');
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!hp || !pos) return;
+    const grid = worldToGrid(pos.x, pos.y);
+    SaveManager.save({
+      zone: 'forest',
+      player: {
+        hp: Math.round(hp.current),
+        maxHp: hp.max,
+        gx: Math.round(grid.x),
+        gy: Math.round(grid.y),
+      },
+    });
   }
 
   private findEnemyAtCell(gx: number, gy: number): Entity | null {

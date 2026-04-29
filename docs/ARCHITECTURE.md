@@ -1,7 +1,7 @@
 # ARCHITECTURE — Damia
 
 > État fonctionnel et organisation du code à un instant T.
-> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M6.
+> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M7.
 
 ---
 
@@ -18,27 +18,30 @@
 
 ## État fonctionnel actuel
 
-**Jalon courant :** M6 ✅ done — prêt pour M7.
+**Jalon courant :** M7 ✅ done — prêt pour M8.
 
 **Ce qui marche aujourd'hui :**
 
-- **Forêt de Seles 32×32** : layout TLoD-fidèle, 52 props bloquants, 2 sorties, 6 mobs avec IA per-kind, loot drops (M5)
-- **HUD complet** :
-  - **Hud (bas-gauche)** : portrait DART + HP bar rouge avec valeur "HP X/100" + SP bar bleue (0/100)
-  - **Hotbar (bas-centre)** : 8 slots placeholder (1-8), inactifs en MVP
-  - **MiniMap (top-right)** : 200×200, dots player (cyan), enemies (rouge), exits (jaune transition / gris bloqué). Toggle touche `M`. Path zones visibles en background.
-  - **ZoneTitle (top-center)** : "Forest of Seles" + "Find Hellena Prison", fade 500/2500/1000ms à l'entrée de zone
-  - **ActionLog (bottom-right)** : 3 lignes max, fade après 4s, push à chaque pickup
-- **Merchant placeholder** (capsule brun) à (1, 17) sur la branche ouest → toast "Merchant — Coming soon" quand Dart marche dessus
-- Tous les acquis M0-M5 (combat temps réel, loot, exits, etc.)
-- 17 tests passent (inchangé depuis M5)
+- **TitleScene** au lancement : "DAMIA" + "TLoD secret project" + boutons New Game / Continue (greyed si pas de save)
+- **i18n EN/FR** complet via i18next, switchable depuis Settings (reload)
+- **Audio synthétisé** (zéro fichier) :
+  - Web Audio + OscillatorNode pour combat.swing/hit/death, items.pickup, ui.click
+  - Volumes master/music/sfx persistés dans localStorage, ducking par GainNode
+  - Auto-suspend sur tab caché, unlock au premier pointerdown (browser policy)
+- **SettingsPanel (touche `Esc`)** : 3 sliders volume +/-, lang toggle EN ↔ FR, Resume / Quit-to-Title. Pause world updates pendant qu'il est ouvert.
+- **Save/Continue** :
+  - localStorage `damia.save` schemaVersion=1
+  - Auto-save : visibilitychange hidden, sortie south (DemoEnd), Quit-to-Title
+  - Save skip + clear quand le joueur meurt (évite respawn doomed)
+  - Continue charge HP + position, fresh map (mobs respawnent)
+- **Forêt + 6 mobs + IA + HUD + loot** : tous les acquis M0-M6 préservés
+- 17 tests passent (inchangé depuis M5 — services sont testés manuellement)
 
 **Ce qui n'existe pas encore :**
 
-- Aucun audio (M7)
-- Aucune sauvegarde (M7)
+- Aucun fichier audio (musique forêt) — l'API est prête, manque l'OST file
 - Items pickés ne font rien sur Dart (pas d'inventaire/soin) — backlog post-MVP
-- Pas d'asset graphique réel (M8 — défer du swap M6 vers la phase IA)
+- Pas d'asset graphique réel (M8 — phase IA + screenshots TLoD)
 
 ---
 
@@ -163,21 +166,24 @@
 
 ### `src/services/` — singletons applicatifs
 
-| Fichier                                                         | Rôle                                                                     |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [src/services/AssetManager.ts](../src/services/AssetManager.ts) | M2 manifest procédural placeholder.                                      |
-| [src/services/I18nService.ts](../src/services/I18nService.ts)   | Stub `t(key, params?)`. M4 ajoute `gameOver.title`, `gameOver.subtitle`. |
+| Fichier                                                         | Rôle                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/services/AssetManager.ts](../src/services/AssetManager.ts) | M2 manifest procédural placeholder. M8 ajoutera `kind: 'texture'`.                                                                                                                                                                                      |
+| [src/services/I18nService.ts](../src/services/I18nService.ts)   | **M7 i18next.** `initI18n()` async bootstrap, `t(key, params?)` API préservée, `getLanguage()`, `setLanguage()` (reload). LanguageDetector persiste dans localStorage `damia.lang`.                                                                     |
+| [src/services/AudioManager.ts](../src/services/AudioManager.ts) | **M7.** Web Audio synth SFX (combat.swing/hit/death, items.pickup, ui.click). Volumes master/music/sfx via GainNodes, persistés dans localStorage `damia.audio`. `unlockAudio()` au premier user gesture. Music API présente, no-op tant que pas d'OST. |
+| [src/services/SaveManager.ts](../src/services/SaveManager.ts)   | **M7.** localStorage `damia.save` schemaVersion=1. `save({zone, player})`, `load()`, `has()`, `clear()`. Validation schema, fallback null si version inconnue.                                                                                          |
 
 ### `src/ui/` — UI Pixi (overlay)
 
-| Fichier                                       | Rôle                                                                                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| [src/ui/Toast.ts](../src/ui/Toast.ts)         | Toast bottom-center (Path overgrown / Merchant).                                                                                               |
-| [src/ui/Hud.ts](../src/ui/Hud.ts)             | **M6.** Bas-gauche : portrait DART + HP bar rouge + SP bar bleue. `setHealth/setSp` appelés par la scène chaque frame.                         |
-| [src/ui/Hotbar.ts](../src/ui/Hotbar.ts)       | **M6.** Bas-centre : 8 slots placeholder (1-8), inactifs.                                                                                      |
-| [src/ui/MiniMap.ts](../src/ui/MiniMap.ts)     | **M6.** Top-right 200×200 toggleable (touche `M`). Background path zones, dots player (cyan)/enemies (rouge)/exits. Lit le world chaque frame. |
-| [src/ui/ZoneTitle.ts](../src/ui/ZoneTitle.ts) | **M6.** Top-center titre + objectif. `show()` déclenche fade in 500 / hold 2500 / fade out 1000ms.                                             |
-| [src/ui/ActionLog.ts](../src/ui/ActionLog.ts) | **M6.** Bottom-right 3 lignes max. `push(msg)` ajoute en bas, fade après 4s.                                                                   |
+| Fichier                                               | Rôle                                                                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/ui/Toast.ts](../src/ui/Toast.ts)                 | Toast bottom-center (Path overgrown / Merchant).                                                                                                     |
+| [src/ui/Hud.ts](../src/ui/Hud.ts)                     | **M6.** Bas-gauche : portrait DART + HP bar rouge + SP bar bleue. `setHealth/setSp` appelés par la scène chaque frame.                               |
+| [src/ui/Hotbar.ts](../src/ui/Hotbar.ts)               | **M6.** Bas-centre : 8 slots placeholder (1-8), inactifs.                                                                                            |
+| [src/ui/MiniMap.ts](../src/ui/MiniMap.ts)             | **M6.** Top-right 200×200 toggleable (touche `M`). Background path zones, dots player (cyan)/enemies (rouge)/exits. Lit le world chaque frame.       |
+| [src/ui/ZoneTitle.ts](../src/ui/ZoneTitle.ts)         | **M6.** Top-center titre + objectif. `show()` déclenche fade in 500 / hold 2500 / fade out 1000ms.                                                   |
+| [src/ui/ActionLog.ts](../src/ui/ActionLog.ts)         | **M6.** Bottom-right 3 lignes max. `push(msg)` ajoute en bas, fade après 4s.                                                                         |
+| [src/ui/SettingsPanel.ts](../src/ui/SettingsPanel.ts) | **M7.** Esc-toggleable overlay. 3 sliders volume +/- (10% step), lang toggle EN ↔ FR, Resume / Quit-to-Title. `onAction(listener)` notifie la scène. |
 
 ### `src/scenes/` — orchestration
 
@@ -352,6 +358,29 @@ Layout TLoD-fidèle, 52 props, 2 exits (DemoEnd + Path overgrown blocked), Toast
 - ForestScene : monte les 5 UI sur layers.ui, tick HUD/MiniMap chaque frame, `zoneTitle.show()` à l'entrée, route pickups vers ActionLog (au lieu de Toast), wire merchant trigger vers Toast
 - i18n keys ajoutées : hud.dart, zones.forestOfSeles.name/objective, interactables.merchantComingSoon, log.itemPicked, log.xpGained
 
-### M7 — Audio + i18n + Save ⏳
+### M7 — Audio + i18n + Save ✅
 
-À faire : AudioManager (howler), musique d'ambiance forêt + SFX, swap I18nService stub pour i18next + JSON locales, SaveManager (localStorage avec schemaVersion).
+**Fonctionnel :** Title → New Game / Continue, audio SFX synthétisé, Esc-Settings (volumes + lang), save sur visibilitychange / transition / Quit-to-Title.
+**Créé :**
+
+- `services/AudioManager.ts` (Web Audio synth, volumes localStorage)
+- `services/SaveManager.ts` (localStorage v1)
+- `services/I18nService.ts` réécrit (i18next + LanguageDetector, async init)
+- `locales/en.json` + `locales/fr.json` (toutes les clés migrées + 5 nouvelles)
+- `scenes/TitleScene.ts` (entrée du jeu, gère AudioContext unlock)
+- `ui/SettingsPanel.ts` (Esc overlay, sliders +/-, lang toggle, Resume/Quit-to-Title)
+- ForestScene : accept saveData en constructor, persist sur visibilitychange/transition/quit, pause world updates si Settings ouvert, clear save sur mort
+- BootScene → TitleScene
+- Game.start() devient async (initI18n + initAudioManager)
+- SFX hooks : CombatSystem (swing+hit), DeathSystem (death), pickup listener (items.pickup), TitleScene/SettingsPanel (ui.click)
+- Player factory : optional `hp` override pour Continue
+
+**Notes :**
+
+- Music API ready mais no-op : drop un fichier dans `assets/audio/music/` et wire MUSIC_MANIFEST quand l'OST sera là
+- i18n live re-render non implémenté (lang change = full reload, choix persisté via localStorage)
+- ESLint : `no-undef` désactivé (TS valide déjà, ESLint ne connaît pas DOM types comme `OscillatorType`)
+
+### M8 — Polish + assets phase 3 ⏳
+
+À faire : génération sprites IA pour Dart + 4 mobs + tiles forêt depuis screenshots TLoD, particules (feuilles, brume), lumière dynamique, curseur custom, écran titre styled, cinématique placeholder, déploiement.

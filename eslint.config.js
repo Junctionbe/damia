@@ -39,6 +39,8 @@ export default [
       'no-var': 'error',
       // Disable base no-redeclare; TS allows interface + value with same name (declaration merging).
       'no-redeclare': 'off',
+      // TS already validates identifiers; ESLint's no-undef is unaware of DOM type aliases like OscillatorType.
+      'no-undef': 'off',
     },
   },
   prettier,

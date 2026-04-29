@@ -1,0 +1,51 @@
+{
+  "title": {
+    "name": "DAMIA",
+    "subtitle": "Projet secret TLoD",
+    "newGame": "Nouvelle partie",
+    "continue": "Continuer",
+    "settings": "Options"
+  },
+  "settings": {
+    "title": "Options",
+    "master": "Volume général",
+    "music": "Volume musique",
+    "sfx": "Volume effets",
+    "language": "Langue",
+    "resume": "Reprendre",
+    "quitToTitle": "Retour au titre"
+  },
+  "exits": {
+    "westPathOvergrown": "Le chemin est obstrué.",
+    "demoEndTitle": "Fin de la démo",
+    "demoEndSubtitle": "La Prison Hellena vous attend"
+  },
+  "gameOver": {
+    "title": "Vous êtes mort",
+    "subtitle": "Appuyez sur R pour recommencer"
+  },
+  "items": {
+    "healingPotion": "Potion de soin",
+    "burnOut": "Brûle-tout",
+    "gold": "Or"
+  },
+  "pickups": {
+    "picked": "Ramassé : {{item}}"
+  },
+  "hud": {
+    "dart": "DART"
+  },
+  "zones": {
+    "forestOfSeles": {
+      "name": "Forêt de Seles",
+      "objective": "Trouver la Prison Hellena"
+    }
+  },
+  "interactables": {
+    "merchantComingSoon": "Marchand — Bientôt disponible"
+  },
+  "log": {
+    "xpGained": "+{{xp}} XP",
+    "itemPicked": "Ramassé : {{item}}"
+  }
+}
