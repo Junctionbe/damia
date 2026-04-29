@@ -71,5 +71,6 @@
     { "kind": "assassinCock", "gx": 19, "gy": 17 },
     { "kind": "trent", "gx": 16, "gy": 24 },
     { "kind": "goblin", "gx": 17, "gy": 28 }
-  ]
+  ],
+  "interactables": [{ "kind": "merchant", "gx": 1, "gy": 17 }]
 }

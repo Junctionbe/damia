@@ -13,6 +13,12 @@ const TRANSLATIONS: Record<string, string> = {
   'items.burnOut': 'Burn Out',
   'items.gold': 'Gold',
   'pickups.picked': 'Picked up: {item}',
+  'hud.dart': 'DART',
+  'zones.forestOfSeles.name': 'Forest of Seles',
+  'zones.forestOfSeles.objective': 'Find Hellena Prison',
+  'interactables.merchantComingSoon': 'Merchant — Coming soon',
+  'log.xpGained': '+{xp} XP',
+  'log.itemPicked': 'Picked up: {item}',
 };
 
 export function t(key: string, params?: Record<string, string | number>): string {

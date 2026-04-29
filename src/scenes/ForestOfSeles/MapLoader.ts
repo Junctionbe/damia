@@ -1,5 +1,6 @@
 import type { PropKind } from '@data/props';
 import type { MobKind } from '@data/balance';
+import type { InteractableKind } from '@gameplay/entities/interactables';
 import rawMap from './map.json';
 
 export interface MapPathZone {
@@ -25,6 +26,13 @@ export interface MapMob {
   gy: number;
 }
 
+export interface MapInteractable {
+  kind: InteractableKind;
+  gx: number;
+  gy: number;
+  messageKey?: string;
+}
+
 export interface MapData {
   name: string;
   size: { w: number; h: number };
@@ -33,6 +41,7 @@ export interface MapData {
   props: MapProp[];
   exits: MapExit[];
   mobs: MapMob[];
+  interactables: MapInteractable[];
 }
 
 const WALKABLE = 0;

@@ -7,6 +7,7 @@ import type { Exit } from './Exit';
 import type { Faction } from './Faction';
 import type { FloatingText } from './FloatingText';
 import type { Health } from './Health';
+import type { Interactable } from './Interactable';
 import type { Item } from './Item';
 import type { Pathfinder } from './Pathfinder';
 import type { Player } from './Player';
@@ -35,6 +36,7 @@ export interface Components {
   FloatingText: FloatingText;
   AI: AI;
   Item: Item;
+  Interactable: Interactable;
 }
 
 export type ComponentName = keyof Components;
@@ -49,6 +51,7 @@ export type {
   Faction,
   FloatingText,
   Health,
+  Interactable,
   Item,
   Pathfinder,
   Player,

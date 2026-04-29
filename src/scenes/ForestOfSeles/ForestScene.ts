@@ -14,6 +14,7 @@ import { spawnPlayer } from '@gameplay/entities/player';
 import { spawnProp } from '@gameplay/entities/props';
 import { spawnExit } from '@gameplay/entities/props/exit';
 import { spawnMob } from '@gameplay/entities/mobs';
+import { spawnInteractable } from '@gameplay/entities/interactables';
 import { InputController } from '@gameplay/controls/InputController';
 import { PathfindingSystem } from '@gameplay/systems/PathfindingSystem';
 import { MovementSystem } from '@gameplay/systems/MovementSystem';
@@ -24,14 +25,22 @@ import { AISystem } from '@gameplay/systems/AISystem';
 import { DefenseSystem } from '@gameplay/systems/DefenseSystem';
 import { DeathSystem } from '@gameplay/systems/DeathSystem';
 import { ItemPickupSystem } from '@gameplay/systems/ItemPickupSystem';
+import { InteractableSystem } from '@gameplay/systems/InteractableSystem';
 import { ForestMap, buildCollisionGrid } from './MapLoader';
 import { propBlocks } from '@data/props';
 import type { MobKind } from '@data/balance';
 import { ITEMS } from '@data/items';
 import { Toast } from '@ui/Toast';
+import { Hud } from '@ui/Hud';
+import { Hotbar } from '@ui/Hotbar';
+import { MiniMap } from '@ui/MiniMap';
+import { ZoneTitle } from '@ui/ZoneTitle';
+import { ActionLog } from '@ui/ActionLog';
 import { t } from '@services/I18nService';
 import { DemoEndScene } from '@scenes/DemoEndScene';
 import { GameOverScene } from '@scenes/GameOverScene';
+
+const PLAYER_SP_MAX = 100;
 
 export class ForestScene implements Scene {
   readonly name = 'forest';
@@ -43,6 +52,11 @@ export class ForestScene implements Scene {
   private systems: System<Components>[] = [];
   private input: InputController | null = null;
   private toast: Toast | null = null;
+  private hud: Hud | null = null;
+  private hotbar: Hotbar | null = null;
+  private minimap: MiniMap | null = null;
+  private zoneTitle: ZoneTitle | null = null;
+  private actionLog: ActionLog | null = null;
   private playerId: Entity | null = null;
   private cameraFollow = false;
   private mobKinds = new Map<Entity, MobKind>();
@@ -76,6 +90,9 @@ export class ForestScene implements Scene {
       const id = spawnMob(this.world, mob.kind, mob.gx, mob.gy);
       this.mobKinds.set(id, mob.kind);
     }
+    for (const inter of map.interactables) {
+      spawnInteractable(this.world, inter);
+    }
 
     const collisionGrid = buildCollisionGrid(map, propBlocks);
     const pathfinding = new PathfindingSystem(collisionGrid);
@@ -85,6 +102,7 @@ export class ForestScene implements Scene {
     const combat = new CombatSystem();
     const defense = new DefenseSystem();
     const exits = new ExitSystem();
+    const interactables = new InteractableSystem();
     const death = new DeathSystem((id) => this.mobKinds.get(id) ?? null);
     const pickup = new ItemPickupSystem();
     const render = new RenderSystem(this.layers);
@@ -96,6 +114,7 @@ export class ForestScene implements Scene {
       pathfinding,
       movement,
       exits,
+      interactables,
       defense,
       death,
       pickup,
@@ -103,7 +122,27 @@ export class ForestScene implements Scene {
       floating,
     ];
 
+    // UI overlays mounted on layers.ui (which is on the stage, NOT the viewport,
+    // so they don't pan/zoom with the camera).
     this.toast = new Toast(ctx.app, this.layers.ui);
+    this.hud = new Hud(ctx.app);
+    this.hotbar = new Hotbar(ctx.app);
+    this.minimap = new MiniMap(ctx.app, {
+      gridWidth: map.size.w,
+      gridHeight: map.size.h,
+      pathZones: map.pathZones,
+    });
+    this.zoneTitle = new ZoneTitle(ctx.app);
+    this.actionLog = new ActionLog(ctx.app);
+    this.layers.ui.addChild(
+      this.hud.container,
+      this.hotbar.container,
+      this.minimap.container,
+      this.zoneTitle.container,
+      this.actionLog.container,
+    );
+
+    this.zoneTitle.show(t('zones.forestOfSeles.name'), t('zones.forestOfSeles.objective'));
 
     exits.onTrigger(({ exit }) => {
       if (exit.kind === 'transition' && exit.targetScene === 'demo-end') {
@@ -115,6 +154,10 @@ export class ForestScene implements Scene {
       }
     });
 
+    interactables.onTrigger(({ interactable }) => {
+      this.toast?.show(t(interactable.messageKey));
+    });
+
     death.onPlayerDeath(() => {
       queueMicrotask(() => {
         void ctx.scenes.switchTo(new GameOverScene(), ctx);
@@ -122,7 +165,7 @@ export class ForestScene implements Scene {
     });
 
     pickup.onPickup(({ kind }) => {
-      this.toast?.show(t('pickups.picked', { item: t(ITEMS[kind].nameKey) }));
+      this.actionLog?.push(t('log.itemPicked', { item: t(ITEMS[kind].nameKey) }));
     });
 
     const playerWorld = gridToWorld(map.spawn.gx, map.spawn.gy);
@@ -172,6 +215,16 @@ export class ForestScene implements Scene {
   exit(ctx: GameContext): void {
     this.toast?.destroy();
     this.toast = null;
+    this.hud?.destroy();
+    this.hud = null;
+    this.hotbar?.destroy();
+    this.hotbar = null;
+    this.minimap?.destroy();
+    this.minimap = null;
+    this.zoneTitle?.destroy();
+    this.zoneTitle = null;
+    this.actionLog?.destroy();
+    this.actionLog = null;
     this.input?.destroy();
     this.input = null;
     for (const sys of this.systems) sys.destroy?.();
@@ -198,8 +251,16 @@ export class ForestScene implements Scene {
       if (!this.world) break;
       sys.update(dt, this.world);
     }
+    if (!this.world) return;
 
-    if (this.cameraFollow && this.viewport && this.world && this.playerId !== null) {
+    if (this.playerId !== null) {
+      const hp = this.world.getComponent(this.playerId, 'Health');
+      if (hp && this.hud) this.hud.setHealth(hp.current, hp.max);
+      if (this.hud) this.hud.setSp(0, PLAYER_SP_MAX);
+    }
+    if (this.minimap) this.minimap.update(this.world);
+
+    if (this.cameraFollow && this.viewport && this.playerId !== null) {
       const pos = this.world.getComponent(this.playerId, 'Position');
       if (pos) this.viewport.moveCenter(pos.x, pos.y);
     }

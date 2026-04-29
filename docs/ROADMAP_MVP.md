@@ -184,16 +184,13 @@
 
 **Tâches :**
 
-- [ ] `ui/Hud.ts` : portrait Dart + barre HP/SP bas-gauche
-- [ ] `ui/Hotbar.ts` : 8 slots vides, raccourcis 1-8 (inactifs MVP)
-- [ ] `ui/MiniMap.ts` : toggle `M`, affiche Dart + ennemis visibles + exits
-- [ ] `ui/ZoneTitle.ts` : fade in/out à l'entrée de zone
-- [ ] `ui/ActionLog.ts` : 3 lignes max, fade out 5s
-- [ ] Placeholder Merchant visible avec interaction "Coming soon"
-- [ ] **Swap assets** : remplacer placeholders par packs gratuits iso fantasy (recherche : OpenGameArt "isometric forest", itch.io "isometric RPG asset")
-  - Tiles : herbe, terre, racines, eau (si présente)
-  - Sprites : Dart human placeholder, mobs génériques
-  - Mise à jour `AssetManager` manifest UNIQUEMENT, zéro changement code gameplay
+- [x] `ui/Hud.ts` : portrait DART + HP bar (rouge) + SP bar (bleue), bas-gauche, responsive resize
+- [x] `ui/Hotbar.ts` : 8 slots placeholder centrés en bas, labels 1-8 (inactifs)
+- [x] `ui/MiniMap.ts` : 200×200 top-right, dots player/enemies/exits + path zones, toggle `M`
+- [x] `ui/ZoneTitle.ts` : titre + objectif top-center avec fade in (500ms) → hold (2.5s) → fade out (1s)
+- [x] `ui/ActionLog.ts` : 3 lignes max bottom-right, fade out 4s+1s
+- [x] Placeholder Merchant visible (capsule brun) à (1, 17) avec toast "Merchant — Coming soon" via `Interactable` component + `InteractableSystem`
+- [⏭️] **Swap assets** différé vers M8 (phase 3 IA générée + screenshots TLoD) — éviter le double travail puisque l'utilisateur a déjà les assets TLoD dans `shareAI/`
 
 **Done quand :**
 
@@ -301,6 +298,6 @@
 | M3    | ✅ done    | Forêt + collisions + exits (DemoEnd/Path overgrown)     |
 | M4    | ✅ done    | Combat MVP : HP/ATK/DEF, attaque, défense, Game Over    |
 | M5    | ✅ done    | 6 mobs sur la map, IA per-kind, loot tables             |
-| M6    | ⏳ pending | Prêt à démarrer                                         |
-| M7    | —          |                                                         |
+| M6    | ✅ done    | HUD complet (HP/SP, hotbar, minimap, zone title, log)   |
+| M7    | ⏳ pending | Prêt à démarrer                                         |
 | M8    | —          |                                                         |

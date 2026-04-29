@@ -1,7 +1,7 @@
 # ARCHITECTURE — Damia
 
 > État fonctionnel et organisation du code à un instant T.
-> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M5.
+> **À mettre à jour à la fin de chaque jalon.** Dernière mise à jour : fin M6.
 
 ---
 
@@ -18,33 +18,27 @@
 
 ## État fonctionnel actuel
 
-**Jalon courant :** M5 ✅ done — prêt pour M6.
+**Jalon courant :** M6 ✅ done — prêt pour M7.
 
 **Ce qui marche aujourd'hui :**
 
-- **Forêt de Seles 32×32** : layout TLoD-fidèle, 52 props bloquants, deux sorties (DemoEnd + Path overgrown)
-- **6 mobs** spawnés selon `map.json` :
-  - 2 Berserk Mice (16, 9) et (4, 16) — fuient sous 30% HP
-  - 2 Goblins (14, 16) et (17, 28) — aggro standard mêlée
-  - 1 Assassin Cock (19, 17) — hit-and-run, retire après chaque coup
-  - 1 Trent (16, 24) — slow tank, gros dégâts (12), defense 6
-- **IA per-kind** différenciée perceptiblement :
-  - Mouse : charge → fuite à HP bas
-  - Goblin/Trent : engage et tape jusqu'à mort
-  - Cock : tape puis recule à 200px tant que cooldown > 50%
-- **Combat** : clic gauche sur mob → engage, S maintenu → defend, mort Dart → GameOver
-- **Loot** : 30% drop chance par mob mort, item visible (cercle coloré) au sol → marche dessus → toast "Picked up: Healing Potion / Burn Out / Gold"
-- **+N XP** floating text à chaque mob tué
-- Tous les acquis M0-M4 (FPS overlay, drag/zoom, camera follow `C`, exits, combat)
-- 17 tests passent (4 iso + 5 ECS + 4 combat + 4 loot)
+- **Forêt de Seles 32×32** : layout TLoD-fidèle, 52 props bloquants, 2 sorties, 6 mobs avec IA per-kind, loot drops (M5)
+- **HUD complet** :
+  - **Hud (bas-gauche)** : portrait DART + HP bar rouge avec valeur "HP X/100" + SP bar bleue (0/100)
+  - **Hotbar (bas-centre)** : 8 slots placeholder (1-8), inactifs en MVP
+  - **MiniMap (top-right)** : 200×200, dots player (cyan), enemies (rouge), exits (jaune transition / gris bloqué). Toggle touche `M`. Path zones visibles en background.
+  - **ZoneTitle (top-center)** : "Forest of Seles" + "Find Hellena Prison", fade 500/2500/1000ms à l'entrée de zone
+  - **ActionLog (bottom-right)** : 3 lignes max, fade après 4s, push à chaque pickup
+- **Merchant placeholder** (capsule brun) à (1, 17) sur la branche ouest → toast "Merchant — Coming soon" quand Dart marche dessus
+- Tous les acquis M0-M5 (combat temps réel, loot, exits, etc.)
+- 17 tests passent (inchangé depuis M5)
 
 **Ce qui n'existe pas encore :**
 
-- Aucun HUD (HP bar, mini-map, hotbar) — M6
-- Items pickés ne font rien sur Dart (juste log) — pas d'inventaire ni soin
 - Aucun audio (M7)
 - Aucune sauvegarde (M7)
-- Pas d'asset graphique réel (M6/M8)
+- Items pickés ne font rien sur Dart (pas d'inventaire/soin) — backlog post-MVP
+- Pas d'asset graphique réel (M8 — défer du swap M6 vers la phase IA)
 
 ---
 
@@ -111,52 +105,55 @@
 
 ### `src/gameplay/` — logique de jeu (ECS)
 
-**17 components** dans [src/gameplay/components/](../src/gameplay/components/) :
+**18 components** dans [src/gameplay/components/](../src/gameplay/components/) :
 
-| Component          | Forme                                                                                  | Usage                                |
-| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------ |
-| Position           | `{ x, y }`                                                                             | World coords.                        |
-| Velocity           | `{ vx, vy }`                                                                           | Réservé.                             |
-| Sprite             | `{ shape, color, w, h, layer, scale? }`                                                | Visual config.                       |
-| Player             | marker                                                                                 | Identifie Dart.                      |
-| Pathfinder         | `{ targetGrid, waypoints, computing }`                                                 | État pathfind.                       |
-| Speed              | `{ value }` px/ms                                                                      | Vitesse de move.                     |
-| Collider           | `{ gx, gy, blocks }`                                                                   | Bloque la grille easystar.           |
-| Exit               | `{ kind: transition, gx, gy, targetScene }` ou `{ kind: blocked, gx, gy, messageKey }` | Triggers de zone.                    |
-| **Health**         | `{ current, max, invulnUntilMs }`                                                      | M4 : PV.                             |
-| **Stats**          | `{ atk, def, atkSpeed, range, aggroRange }`                                            | M4 : combat.                         |
-| **Faction**        | `{ side: 'player' \| 'enemy' \| 'neutral' }`                                           | M4 : ciblage.                        |
-| **CombatIntent**   | `{ targetId }`                                                                         | M4 : entité veut attaquer une cible. |
-| **AttackCooldown** | `{ remainingMs }`                                                                      | M4 : décrémenté par CooldownSystem.  |
-| **Defending**      | marker                                                                                 | M4 : actif tant que `S` est tenu.    |
-| **FloatingText**   | `{ text, color, elapsedMs, durationMs }`                                               | M4 : nombre flottant éphémère.       |
-| **AI**             | `{ behavior: 'mouse' \| 'goblin' \| 'cock' \| 'trent' }`                               | M5 : route vers handler AISystem.    |
-| **Item**           | `{ kind: ItemKind }`                                                                   | M5 : entité picable au sol.          |
+| Component          | Forme                                                                                  | Usage                                 |
+| ------------------ | -------------------------------------------------------------------------------------- | ------------------------------------- |
+| Position           | `{ x, y }`                                                                             | World coords.                         |
+| Velocity           | `{ vx, vy }`                                                                           | Réservé.                              |
+| Sprite             | `{ shape, color, w, h, layer, scale? }`                                                | Visual config.                        |
+| Player             | marker                                                                                 | Identifie Dart.                       |
+| Pathfinder         | `{ targetGrid, waypoints, computing }`                                                 | État pathfind.                        |
+| Speed              | `{ value }` px/ms                                                                      | Vitesse de move.                      |
+| Collider           | `{ gx, gy, blocks }`                                                                   | Bloque la grille easystar.            |
+| Exit               | `{ kind: transition, gx, gy, targetScene }` ou `{ kind: blocked, gx, gy, messageKey }` | Triggers de zone.                     |
+| **Health**         | `{ current, max, invulnUntilMs }`                                                      | M4 : PV.                              |
+| **Stats**          | `{ atk, def, atkSpeed, range, aggroRange }`                                            | M4 : combat.                          |
+| **Faction**        | `{ side: 'player' \| 'enemy' \| 'neutral' }`                                           | M4 : ciblage.                         |
+| **CombatIntent**   | `{ targetId }`                                                                         | M4 : entité veut attaquer une cible.  |
+| **AttackCooldown** | `{ remainingMs }`                                                                      | M4 : décrémenté par CooldownSystem.   |
+| **Defending**      | marker                                                                                 | M4 : actif tant que `S` est tenu.     |
+| **FloatingText**   | `{ text, color, elapsedMs, durationMs }`                                               | M4 : nombre flottant éphémère.        |
+| **AI**             | `{ behavior: 'mouse' \| 'goblin' \| 'cock' \| 'trent' }`                               | M5 : route vers handler AISystem.     |
+| **Item**           | `{ kind: ItemKind }`                                                                   | M5 : entité picable au sol.           |
+| **Interactable**   | `{ gx, gy, messageKey }`                                                               | M6 : trigger de proximité (Merchant). |
 
 **Entity factories** [src/gameplay/entities/](../src/gameplay/entities/) :
 
-| Fichier                                                     | Rôle                                                                                                              |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [player.ts](../src/gameplay/entities/player.ts)             | Dart : Player + Position + Velocity + Speed + Pathfinder + Sprite + **Health + Stats + Faction + AttackCooldown** |
-| [props/index.ts](../src/gameplay/entities/props/index.ts)   | `spawnProp` générique (tree/rock/log/roots).                                                                      |
-| [props/exit.ts](../src/gameplay/entities/props/exit.ts)     | `spawnExit` (Position + Exit).                                                                                    |
-| [mobs/index.ts](../src/gameplay/entities/mobs/index.ts)     | **M5.** `spawnMob(world, kind, gx, gy)` — assemble n'importe quel mob via KIND_TO_BEHAVIOR + MOBS de balance.ts.  |
-| [floatingText.ts](../src/gameplay/entities/floatingText.ts) | **M4.** `spawnFloatingText({ x, y, text, color?, durationMs? })`.                                                 |
-| [items.ts](../src/gameplay/entities/items.ts)               | **M5.** `spawnItem(world, kind, x, y)` — Position + Sprite (layer fx) + Item.                                     |
+| Fichier                                                       | Rôle                                                                                                                                                                                |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [player.ts](../src/gameplay/entities/player.ts)               | Dart : Player + Position + Velocity + Speed + Pathfinder + Sprite + **Health + Stats + Faction + AttackCooldown**                                                                   |
+| [props/index.ts](../src/gameplay/entities/props/index.ts)     | `spawnProp` générique (tree/rock/log/roots).                                                                                                                                        |
+| [props/exit.ts](../src/gameplay/entities/props/exit.ts)       | `spawnExit` (Position + Exit).                                                                                                                                                      |
+| [mobs/index.ts](../src/gameplay/entities/mobs/index.ts)       | **M5.** `spawnMob(world, kind, gx, gy)` — assemble n'importe quel mob via KIND_TO_BEHAVIOR + MOBS de balance.ts.                                                                    |
+| [floatingText.ts](../src/gameplay/entities/floatingText.ts)   | **M4.** `spawnFloatingText({ x, y, text, color?, durationMs? })`.                                                                                                                   |
+| [items.ts](../src/gameplay/entities/items.ts)                 | **M5.** `spawnItem(world, kind, x, y)` — Position + Sprite (layer fx) + Item.                                                                                                       |
+| [interactables.ts](../src/gameplay/entities/interactables.ts) | **M6.** `spawnInteractable(world, { kind, gx, gy, messageKey? })` — Position + Sprite + Interactable. Définit `merchant` (capsule brun, défaut `interactables.merchantComingSoon`). |
 
 **Systems** [src/gameplay/systems/](../src/gameplay/systems/) :
 
-| System               | Rôle                                                                                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PathfindingSystem    | easystarjs sur la grille de collision.                                                                                                                                         |
-| MovementSystem       | Suit waypoints à vitesse constante.                                                                                                                                            |
-| ExitSystem           | Trigger sur cellule d'Exit, anti-spam.                                                                                                                                         |
-| **CooldownSystem**   | M4. Décrémente `AttackCooldown.remainingMs`.                                                                                                                                   |
-| **AISystem**         | **M5 (replaces MobAggroSystem).** Per-behavior dispatcher. mouse=aggro 256px+flee<30%HP. goblin/trent=standard melee. cock=aggro 320px, retreat 200px tant que cooldown > 50%. |
-| **CombatSystem**     | M4. Pour chaque entité avec CombatIntent : si target hors range, refresh path (rate-limited 100ms) ; sinon stop + attack on cooldown ; clear intent si target morte.           |
-| **DefenseSystem**    | M4. Sync `sprite.scale` selon Defending, freeze movement quand defending.                                                                                                      |
-| **DeathSystem**      | M4 + **M5**. Scan entités HP≤0. Player → fire `onPlayerDeath` (single-fire). Mob → spawn `+XP` text + `rollLoot()` → spawn item entity au sol + `destroyEntity`.               |
-| **ItemPickupSystem** | **M5.** Player à ≤36px d'un Item entity → fire `onPickup({ kind })`, destroy item.                                                                                             |
+| System                 | Rôle                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PathfindingSystem      | easystarjs sur la grille de collision.                                                                                                                                         |
+| MovementSystem         | Suit waypoints à vitesse constante.                                                                                                                                            |
+| ExitSystem             | Trigger sur cellule d'Exit, anti-spam.                                                                                                                                         |
+| **CooldownSystem**     | M4. Décrémente `AttackCooldown.remainingMs`.                                                                                                                                   |
+| **AISystem**           | **M5 (replaces MobAggroSystem).** Per-behavior dispatcher. mouse=aggro 256px+flee<30%HP. goblin/trent=standard melee. cock=aggro 320px, retreat 200px tant que cooldown > 50%. |
+| **CombatSystem**       | M4. Pour chaque entité avec CombatIntent : si target hors range, refresh path (rate-limited 100ms) ; sinon stop + attack on cooldown ; clear intent si target morte.           |
+| **DefenseSystem**      | M4. Sync `sprite.scale` selon Defending, freeze movement quand defending.                                                                                                      |
+| **DeathSystem**        | M4 + **M5**. Scan entités HP≤0. Player → fire `onPlayerDeath` (single-fire). Mob → spawn `+XP` text + `rollLoot()` → spawn item entity au sol + `destroyEntity`.               |
+| **ItemPickupSystem**   | **M5.** Player à ≤36px d'un Item entity → fire `onPickup({ kind })`, destroy item.                                                                                             |
+| **InteractableSystem** | **M6.** Détecte player sur cellule d'Interactable, fire `onTrigger({ interactable })`, anti-spam re-entry (même pattern qu'ExitSystem).                                        |
 
 **Controls** [src/gameplay/controls/](../src/gameplay/controls/) :
 
@@ -173,9 +170,14 @@
 
 ### `src/ui/` — UI Pixi (overlay)
 
-| Fichier                               | Rôle                                  |
-| ------------------------------------- | ------------------------------------- |
-| [src/ui/Toast.ts](../src/ui/Toast.ts) | Toast bottom-center (Path overgrown). |
+| Fichier                                       | Rôle                                                                                                                                           |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/ui/Toast.ts](../src/ui/Toast.ts)         | Toast bottom-center (Path overgrown / Merchant).                                                                                               |
+| [src/ui/Hud.ts](../src/ui/Hud.ts)             | **M6.** Bas-gauche : portrait DART + HP bar rouge + SP bar bleue. `setHealth/setSp` appelés par la scène chaque frame.                         |
+| [src/ui/Hotbar.ts](../src/ui/Hotbar.ts)       | **M6.** Bas-centre : 8 slots placeholder (1-8), inactifs.                                                                                      |
+| [src/ui/MiniMap.ts](../src/ui/MiniMap.ts)     | **M6.** Top-right 200×200 toggleable (touche `M`). Background path zones, dots player (cyan)/enemies (rouge)/exits. Lit le world chaque frame. |
+| [src/ui/ZoneTitle.ts](../src/ui/ZoneTitle.ts) | **M6.** Top-center titre + objectif. `show()` déclenche fade in 500 / hold 2500 / fade out 1000ms.                                             |
+| [src/ui/ActionLog.ts](../src/ui/ActionLog.ts) | **M6.** Bottom-right 3 lignes max. `push(msg)` ajoute en bas, fade après 4s.                                                                   |
 
 ### `src/scenes/` — orchestration
 
@@ -337,6 +339,19 @@ Layout TLoD-fidèle, 52 props, 2 exits (DemoEnd + Path overgrown blocked), Toast
 - `ForestScene` : spawn mobs depuis map.json, swap MobAggroSystem→AISystem, ajoute ItemPickupSystem (wire onPickup→toast)
 - i18n keys : items.\* + pickups.picked (avec interpolation `{item}`)
 
-### M6 — HUD + assets phase 2 ⏳
+### M6 — HUD + Merchant ✅
 
-À faire : HUD (HP/SP bar, hotbar, mini-map, ZoneTitle, ActionLog), placeholder Merchant, swap placeholders géométriques par packs gratuits iso fantasy.
+**Fonctionnel :** HUD complet bas-gauche/centre/droite + minimap + zone title + action log + Merchant placeholder. Asset swap "phase 2" différé vers M8 (phase IA).
+**Créé :**
+
+- 1 nouveau component : `Interactable { gx, gy, messageKey }`
+- `gameplay/entities/interactables.ts` : `spawnInteractable` (Merchant kind avec capsule brun)
+- `gameplay/systems/InteractableSystem.ts` : trigger de proximité, anti-spam (même pattern qu'ExitSystem)
+- 5 fichiers UI : `Hud`, `Hotbar`, `MiniMap`, `ZoneTitle`, `ActionLog` — tous responsives au resize via `app.renderer.on('resize')`
+- Map `interactables[]` dans map.json (1 merchant à (1, 17))
+- ForestScene : monte les 5 UI sur layers.ui, tick HUD/MiniMap chaque frame, `zoneTitle.show()` à l'entrée, route pickups vers ActionLog (au lieu de Toast), wire merchant trigger vers Toast
+- i18n keys ajoutées : hud.dart, zones.forestOfSeles.name/objective, interactables.merchantComingSoon, log.itemPicked, log.xpGained
+
+### M7 — Audio + i18n + Save ⏳
+
+À faire : AudioManager (howler), musique d'ambiance forêt + SFX, swap I18nService stub pour i18next + JSON locales, SaveManager (localStorage avec schemaVersion).
