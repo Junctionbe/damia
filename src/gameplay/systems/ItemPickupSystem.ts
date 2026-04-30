@@ -1,4 +1,4 @@
-import type { System, World } from '@core/ecs';
+import type { Entity, System, World } from '@core/ecs';
 import type { Components } from '@gameplay/components';
 import { INVENTORY_SLOT_CAP } from '@gameplay/components/Inventory';
 import { ITEMS, type ItemKind } from '@data/items';
@@ -28,6 +28,9 @@ export type ItemPickupListener = (event: ItemPickupEvent) => void;
  */
 export class ItemPickupSystem implements System<Components> {
   private listener: ItemPickupListener | null = null;
+  /** Entities we've already toasted as `'full'` once — avoids per-frame spam
+   *  while the player stands next to an item with a full inventory. */
+  private fullWarnedIds = new Set<Entity>();
 
   onPickup(listener: ItemPickupListener): void {
     this.listener = listener;
@@ -41,10 +44,14 @@ export class ItemPickupSystem implements System<Components> {
     const inv = world.getComponent(playerId, 'Inventory');
     if (!ppos || !inv) return;
 
+    const now = performance.now();
     for (const id of world.query(['Item', 'Position'])) {
       const ipos = world.getComponent(id, 'Position');
       const item = world.getComponent(id, 'Item');
       if (!ipos || !item) continue;
+      // Player-dropped items have a grace period so they don't bounce back
+      // into the inventory the same frame they were dropped.
+      if (item.pickableAfterMs !== undefined && now < item.pickableAfterMs) continue;
       if (Math.hypot(ipos.x - ppos.x, ipos.y - ppos.y) > PICKUP_RADIUS_PX) continue;
 
       const def = ITEMS[item.kind];
@@ -62,8 +69,12 @@ export class ItemPickupSystem implements System<Components> {
         const distinctSlots = Object.keys(inv.items).length;
         if (distinctSlots >= INVENTORY_SLOT_CAP) {
           // Inventory full — leave the entity on the ground so the player can
-          // drop something and pick it up later.
-          this.listener?.({ kind: item.kind, result: 'full' });
+          // drop something and pick it up later. Toast at most once per entity
+          // so a player who hovers over the item doesn't spam the toast queue.
+          if (!this.fullWarnedIds.has(id)) {
+            this.fullWarnedIds.add(id);
+            this.listener?.({ kind: item.kind, result: 'full' });
+          }
           continue;
         }
         inv.items[item.kind] = 1;
@@ -71,11 +82,19 @@ export class ItemPickupSystem implements System<Components> {
         inv.items[item.kind] = existing + 1;
       }
       this.listener?.({ kind: item.kind, result: 'stored' });
+      this.fullWarnedIds.delete(id);
       world.destroyEntity(id);
+    }
+
+    // Drop warned-id entries for entities that no longer exist (mob died,
+    // item picked up by some other path, scene reset).
+    for (const id of this.fullWarnedIds) {
+      if (!world.hasComponent(id, 'Item')) this.fullWarnedIds.delete(id);
     }
   }
 
   destroy(): void {
     this.listener = null;
+    this.fullWarnedIds.clear();
   }
 }

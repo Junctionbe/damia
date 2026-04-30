@@ -60,7 +60,10 @@
     "full": "Inventaire plein",
     "empty": "Inventaire vide",
     "noTarget": "Aucune cible",
-    "noMana": "Pas assez d'item"
+    "noMana": "Pas assez d'item",
+    "title": "Inventaire",
+    "hotbarLabel": "Barre d'action — glisse un item ou appuie 1-8",
+    "hint": "Clic gauche : sélectionner • Glisser : équiper • Clic droit : utiliser • D : jeter • Échap : fermer"
   },
   "addition": {
     "cooldown": "Pas encore prêt",

@@ -1,5 +1,6 @@
 import type { Sprite, SpriteShape } from '@gameplay/components';
 import type { AssetAlias } from '@services/AssetManager';
+import type { SpellKind } from './spells';
 
 export type ItemKind = 'healingPotion' | 'burnOut' | 'gold';
 
@@ -10,7 +11,7 @@ export type ItemKind = 'healingPotion' | 'burnOut' | 'gold';
  */
 export type ItemUseEffect =
   | { kind: 'heal'; percentMaxHp: number }
-  | { kind: 'spell'; spell: 'burnOut' }
+  | { kind: 'spell'; spell: SpellKind }
   | null;
 
 export interface ItemDefinition {

@@ -100,6 +100,57 @@ export function getDartStatsAtLevel(level: number): DartLevelRow {
 }
 
 /**
+ * Apply Dart's TLoD-canonical row for `level` to a player's `Stats` + `Health`.
+ * Mutates in place: rewrites AT/DF/MAT/MDF and HP max. `clampHpToMax` keeps the
+ * player's current HP under the new max (used on save-load); when `false`, the
+ * caller is expected to refill HP itself (level-up does a full heal).
+ *
+ * Other Stats fields (atkSpeed, range, aggroRange, hit/avoid percentages, the
+ * SPEED scalar) live in `PLAYER_BASE` and are NOT touched here.
+ */
+export function applyDartRow(
+  stats: { atk: number; def: number; magicAtk: number; magicDef: number } | undefined,
+  hp: { current: number; max: number } | undefined,
+  level: number,
+  clampHpToMax: boolean,
+): void {
+  const row = getDartStatsAtLevel(level);
+  if (stats) {
+    stats.atk = row.atk;
+    stats.def = row.def;
+    stats.magicAtk = row.magicAtk;
+    stats.magicDef = row.magicDef;
+  }
+  if (hp) {
+    hp.max = row.hp;
+    if (clampHpToMax) hp.current = Math.min(hp.current, hp.max);
+  }
+}
+
+/**
+ * Cumulative XP needed to *reach* each level (Dart column from
+ * `shareAI/assetsTLOD/characters/common/xp.txt`). Index 0 = level 1 (= 0 XP),
+ * index 59 = level 60 (= 382 000 XP). The progression in TLoD is cumulative:
+ * the XP counter never resets on level-up, it just keeps growing past the
+ * threshold of the next level.
+ */
+export const DART_XP_TO_REACH_LEVEL: ReadonlyArray<number> = [
+  /* LV 1  */ 0, /* LV 2  */ 20, /* LV 3  */ 43, /* LV 4  */ 102, /* LV 5  */ 200, /* LV 6  */ 345,
+  /* LV 7  */ 548, /* LV 8  */ 819, /* LV 9  */ 1166, /* LV 10 */ 1600, /* LV 11 */ 2129,
+  /* LV 12 */ 2764, /* LV 13 */ 3515, /* LV 14 */ 4390, /* LV 15 */ 5400, /* LV 16 */ 6553,
+  /* LV 17 */ 7860, /* LV 18 */ 9331, /* LV 19 */ 10947, /* LV 20 */ 12800, /* LV 21 */ 14817,
+  /* LV 22 */ 17036, /* LV 23 */ 19467, /* LV 24 */ 22118, /* LV 25 */ 25000, /* LV 26 */ 28121,
+  /* LV 27 */ 31492, /* LV 28 */ 35123, /* LV 29 */ 39022, /* LV 30 */ 43200, /* LV 31 */ 47665,
+  /* LV 32 */ 52428, /* LV 33 */ 57499, /* LV 34 */ 62886, /* LV 35 */ 68600, /* LV 36 */ 74649,
+  /* LV 37 */ 81044, /* LV 38 */ 87795, /* LV 39 */ 94910, /* LV 40 */ 102400, /* LV 41 */ 110273,
+  /* LV 42 */ 118540, /* LV 43 */ 127211, /* LV 44 */ 136294, /* LV 45 */ 145800,
+  /* LV 46 */ 155737, /* LV 47 */ 166116, /* LV 48 */ 176947, /* LV 49 */ 188238,
+  /* LV 50 */ 200000, /* LV 51 */ 215303, /* LV 52 */ 231216, /* LV 53 */ 247754,
+  /* LV 54 */ 264928, /* LV 55 */ 282750, /* LV 56 */ 301232, /* LV 57 */ 320386,
+  /* LV 58 */ 340224, /* LV 59 */ 360758, /* LV 60 */ 382000,
+];
+
+/**
  * Addition unlock schedule by level. Values are stored as strings (not the
  * stricter `AdditionKind` union) because future additions aren't declared in
  * `ADDITIONS` yet — consumers must guard with `kind in ADDITIONS`.

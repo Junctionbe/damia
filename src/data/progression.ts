@@ -1,10 +1,18 @@
+import { DART_XP_TO_REACH_LEVEL } from './dart';
+
 /**
- * Level-up curve. Pure helper so balance is one knob to tune. Keep it cheap
- * to compute (called once per level-up, not per frame).
+ * Cumulative XP needed to *reach* `level`. TLoD-style: XP keeps accumulating
+ * across level-ups (the counter never resets), and `xpThresholdForLevel(N)`
+ * gives the total threshold for level N. Currently routes to Dart's table —
+ * other characters have slightly different curves; switch to a per-character
+ * lookup when more playables are added.
  *
- * Formula: 100 × level^1.5 rounded — gentle ramp, ~283 for level 2→3, ~520
- * for 3→4, etc. Tunable later as we get a sense of mob-XP economy.
+ *   xpThresholdForLevel(1) === 0           (start)
+ *   xpThresholdForLevel(2) === 20          (Dart's level-up to LV2)
+ *   xpThresholdForLevel(60) === 382000     (cap)
+ *   xpThresholdForLevel(>60) clamps to 382000.
  */
-export function xpToNext(level: number): number {
-  return Math.round(100 * Math.pow(Math.max(1, level), 1.5));
+export function xpThresholdForLevel(level: number): number {
+  const idx = Math.max(1, Math.min(DART_XP_TO_REACH_LEVEL.length, Math.round(level))) - 1;
+  return DART_XP_TO_REACH_LEVEL[idx]!;
 }

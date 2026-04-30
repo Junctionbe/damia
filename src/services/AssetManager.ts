@@ -25,6 +25,12 @@ const MANIFEST = {
   },
   // Dart portrait used in the HUD (top-left of the screen, in the portrait slot).
   'ui.portrait.dart': { kind: 'texture', url: '/assets/ui/dart-portrait.png' },
+  // Main menu background (TLoD title screen).
+  'ui.mainscreen': { kind: 'texture', url: '/assets/ui/mainscreen.png' },
+  // Animated attack cursor frames — cycled by CursorOverlay when hovering an enemy.
+  'cursor.sword.1': { kind: 'texture', url: '/assets/ui/cursor/sword-1.png' },
+  'cursor.sword.2': { kind: 'texture', url: '/assets/ui/cursor/sword-2.png' },
+  'cursor.sword.3': { kind: 'texture', url: '/assets/ui/cursor/sword-3.png' },
 
   // Item icons (used both in the world-drop sprite and the Hotbar slot badge).
   'sprite.item.healingPotion': { kind: 'texture', url: '/assets/items/healing-potion.png' },

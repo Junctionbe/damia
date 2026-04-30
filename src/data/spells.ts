@@ -10,7 +10,6 @@
  *  - `'groundAoE'` — UI enters a ground-target mode (cursor circle on the
  *    ground). On click, AoE around the click point. Range capped per spell.
  */
-import type { AssetAlias } from '@services/AssetManager';
 import type { VfxKind } from '@gameplay/components/Vfx';
 
 export type SpellKind = 'burnOut' | 'gushingMagma';
@@ -30,8 +29,6 @@ interface SpellBase {
   element: SpellElement;
   /** Cooldown after cast, in ms. 0 = no cooldown (only the item count gates). */
   cooldownMs: number;
-  /** Optional pose alias rendered while casting (Sprite.spellTextureAlias). */
-  posePreviewAlias?: AssetAlias;
   /** Visual effect kind spawned at the hit location (or AoE center) on impact. */
   vfx: VfxKind;
   /** Hit-effect end-radius hint, in world px. Defaults to a sane per-target value

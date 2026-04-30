@@ -12,7 +12,7 @@ import { Howl } from 'howler';
 
 export type SfxAlias = 'combat.swing' | 'combat.hit' | 'combat.death' | 'items.pickup' | 'ui.click';
 
-export type MusicAlias = 'music.forestAmbient';
+export type MusicAlias = 'music.forestAmbient' | 'music.titleScreen';
 
 interface MusicEntry {
   url: string;
@@ -22,6 +22,7 @@ interface MusicEntry {
 
 const MUSIC_MANIFEST: Record<MusicAlias, MusicEntry> = {
   'music.forestAmbient': { url: '/audio/music/forest.ogg', trackVolume: 0.9 },
+  'music.titleScreen': { url: '/audio/music/title.ogg', trackVolume: 0.85 },
 };
 
 const STORAGE_KEY = 'damia.audio';

@@ -55,8 +55,6 @@ export class RenderSystem implements System<Components> {
         let desiredAlias: AssetAlias | undefined = sprite.textureAlias;
         if (dying && sprite.deathTextureAlias) {
           desiredAlias = sprite.deathTextureAlias;
-        } else if (spell && sprite.spellTextureAlias) {
-          desiredAlias = sprite.spellTextureAlias;
         } else if (addition && sprite.additionTextureAliases?.length) {
           // Split duration evenly across the frame array. With 2 frames this
           // means: frame 0 for the first half, frame 1 for the second.

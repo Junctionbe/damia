@@ -41,6 +41,4 @@ export interface Sprite {
    * Dart unlocks Volcano / Burning Rush.)
    */
   additionTextureAliases?: readonly AssetAlias[];
-  /** Optional pose held while the entity is mid-Spell cast (single frame for now). */
-  spellTextureAlias?: AssetAlias;
 }

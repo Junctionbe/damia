@@ -24,12 +24,10 @@ import type { Spell } from './Spell';
 import type { Sprite } from './Sprite';
 import type { Vfx } from './Vfx';
 import type { Stats } from './Stats';
-import type { Velocity } from './Velocity';
 
 /** Project-wide component registry. Add new components here when introducing them. */
 export interface Components {
   Position: Position;
-  Velocity: Velocity;
   Sprite: Sprite;
   Player: Player;
   Pathfinder: Pathfinder;
@@ -85,7 +83,6 @@ export type {
   Speed,
   Sprite,
   Stats,
-  Velocity,
   Vfx,
 };
 export type { AIBehavior } from './AI';

@@ -60,7 +60,10 @@
     "full": "Inventory full",
     "empty": "Inventory empty",
     "noTarget": "No target",
-    "noMana": "No items left"
+    "noMana": "No items left",
+    "title": "Inventory",
+    "hotbarLabel": "Action bar — drag an item or press 1-8",
+    "hint": "Left-click: select • Drag: equip • Right-click: use • D: drop • Esc: close"
   },
   "addition": {
     "cooldown": "Not ready",

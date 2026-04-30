@@ -4,7 +4,8 @@ import { spawnFloatingText } from '@gameplay/entities/floatingText';
 import { spawnItem } from '@gameplay/entities/items';
 import { MOBS, type MobKind } from '@data/balance';
 import { rollLoot } from '@data/items';
-import { xpToNext } from '@data/progression';
+import { DART_XP_TO_REACH_LEVEL, applyDartRow } from '@data/dart';
+import { xpThresholdForLevel } from '@data/progression';
 import { playSfx } from '@services/AudioManager';
 
 export type PlayerDeathListener = () => void;
@@ -74,11 +75,6 @@ export class DeathSystem implements System<Components> {
         if (world.hasComponent(id, 'CombatIntent')) world.removeComponent(id, 'CombatIntent');
         if (world.hasComponent(id, 'AttackSwing')) world.removeComponent(id, 'AttackSwing');
         if (world.hasComponent(id, 'Defending')) world.removeComponent(id, 'Defending');
-        const vel = world.getComponent(id, 'Velocity');
-        if (vel) {
-          vel.vx = 0;
-          vel.vy = 0;
-        }
         world.addComponent(id, 'Dying', { elapsedMs: 0, totalMs: 700 });
         continue;
       }
@@ -104,12 +100,17 @@ export class DeathSystem implements System<Components> {
     const prog = world.getComponent(playerId, 'Progression');
     if (!prog) return;
     prog.xp += xp;
-    while (prog.xp >= prog.xpToNext) {
-      prog.xp -= prog.xpToNext;
+    const cap = DART_XP_TO_REACH_LEVEL.length; // 60
+    // TLoD model: xp accumulates lifelong. We level up while the cumulative
+    // counter crosses the threshold for the next level. xpToNext stays the
+    // cumulative threshold (NOT a delta).
+    while (prog.level < cap && prog.xp >= prog.xpToNext) {
       prog.level += 1;
-      prog.xpToNext = xpToNext(prog.level);
-      // Full heal on level up — match TLoD's level-up behavior.
+      prog.xpToNext = xpThresholdForLevel(prog.level + 1);
+      const stats = world.getComponent(playerId, 'Stats');
       const hp = world.getComponent(playerId, 'Health');
+      applyDartRow(stats, hp, prog.level, false);
+      // Full heal on level up — match TLoD's level-up behavior.
       if (hp) hp.current = hp.max;
       spawnFloatingText(world, {
         x: mobX,

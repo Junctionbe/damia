@@ -13,6 +13,9 @@ const HP_BG = 0x3a0808;
 const HP_FG = 0xd03030;
 const SP_BG = 0x0a1a3a;
 const SP_FG = 0x4a8fff;
+const MP_BG = 0x1a0a3a;
+const MP_FG = 0xb574ff;
+const XP_FG = 0xeec040;
 
 /**
  * Bottom-left HUD: portrait, HP bar, SP bar.
@@ -24,8 +27,12 @@ export class Hud {
   private readonly hpText: Text;
   private readonly spBar: Graphics;
   private readonly spText: Text;
+  private readonly mpBar: Graphics;
+  private readonly mpText: Text;
   private readonly goldText: Text;
   private readonly levelText: Text;
+  private readonly xpText: Text;
+  private readonly zoomText: Text;
   private app: Application;
 
   constructor(app: Application) {
@@ -98,7 +105,23 @@ export class Hud {
     });
     this.spText.position.set(barsX + 6, spY + 1);
 
-    // Gold counter — sits below the SP bar so it doesn't shove the bars around
+    // MP — third bar, below SP. Currently a placeholder (Dragoon system not
+    // wired yet) but exposed so the HUD layout doesn't shift later.
+    const mpY = spY + BAR_HEIGHT + BAR_GAP;
+    const mpBg = new Graphics().roundRect(barsX, mpY, BAR_WIDTH, BAR_HEIGHT, 3).fill(MP_BG);
+    this.mpBar = new Graphics();
+    this.mpText = new Text({
+      text: '',
+      style: {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 12,
+        fill: 0xfaf6e8,
+        fontWeight: 'bold',
+      },
+    });
+    this.mpText.position.set(barsX + 6, mpY + 1);
+
+    // Gold counter — sits below the MP bar so it doesn't shove the bars around
     // when it gains digits.
     this.goldText = new Text({
       text: '',
@@ -110,7 +133,34 @@ export class Hud {
         stroke: { color: 0x000000, width: 2 },
       },
     });
-    this.goldText.position.set(barsX, spY + BAR_HEIGHT + 4);
+    this.goldText.position.set(barsX, mpY + BAR_HEIGHT + 4);
+
+    // XP counter — text-only, just under the MP bar next to the gold counter.
+    // Update is cheap (text change on level-up / kill); no progress bar yet.
+    this.xpText = new Text({
+      text: '',
+      style: {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 12,
+        fill: XP_FG,
+        fontWeight: 'bold',
+        stroke: { color: 0x000000, width: 2 },
+      },
+    });
+    this.xpText.position.set(barsX + 90, mpY + BAR_HEIGHT + 4);
+
+    // Zoom indicator — small read-out so the player can gauge sprite scale.
+    // Sits at the far right of the gold/xp line.
+    this.zoomText = new Text({
+      text: '',
+      style: {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: 12,
+        fill: 0xc8b58a,
+        stroke: { color: 0x000000, width: 2 },
+      },
+    });
+    this.zoomText.position.set(barsX + 200, mpY + BAR_HEIGHT + 4);
 
     // Level pip — top-left of the portrait, small badge so it doesn't compete
     // with the portrait art.
@@ -136,7 +186,12 @@ export class Hud {
       spBg,
       this.spBar,
       this.spText,
+      mpBg,
+      this.mpBar,
+      this.mpText,
       this.goldText,
+      this.xpText,
+      this.zoomText,
     );
 
     this.reposition();
@@ -162,12 +217,30 @@ export class Hud {
     this.spText.text = `SP ${Math.round(current)} / ${max}`;
   }
 
+  setMp(current: number, max: number): void {
+    const ratio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
+    const mpY = 4 + (BAR_HEIGHT + BAR_GAP) * 2;
+    this.mpBar
+      .clear()
+      .roundRect(PORTRAIT_SIZE + 10, mpY, BAR_WIDTH * ratio, BAR_HEIGHT, 3)
+      .fill(MP_FG);
+    this.mpText.text = `MP ${Math.round(current)} / ${max}`;
+  }
+
   setGold(amount: number): void {
     this.goldText.text = `${amount} G`;
   }
 
   setLevel(level: number): void {
     this.levelText.text = `LV ${level}`;
+  }
+
+  setXp(current: number, max: number): void {
+    this.xpText.text = `EXP ${Math.round(current)} / ${max}`;
+  }
+
+  setZoom(scale: number): void {
+    this.zoomText.text = `Zoom ${scale.toFixed(2)}×`;
   }
 
   destroy(): void {

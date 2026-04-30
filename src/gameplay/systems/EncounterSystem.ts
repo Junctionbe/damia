@@ -2,12 +2,7 @@ import type { Entity, System, World } from '@core/ecs';
 import { TILE_W, gridToWorld, worldToGrid } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
 import { spawnMob } from '@gameplay/entities/mobs';
-import {
-  ENCOUNTERS,
-  pickEncounterEntry,
-  pickGroupSize,
-  type EncounterZoneId,
-} from '@data/encounters';
+import { ENCOUNTERS, pickFormation, type EncounterZoneId } from '@data/encounters';
 
 /** Player-relative spawn ring, in tiles. Tight enough that the encounter feels
  *  immediate — mobs reach the player in a few steps and aggro instantly
@@ -108,23 +103,22 @@ export class EncounterSystem implements System<Components> {
     py: number,
   ): number {
     const zone = ENCOUNTERS[this.zoneId];
-    const entry = pickEncounterEntry(zone, Math.random());
-    const groupSize = Math.max(1, pickGroupSize(entry, Math.random()));
+    const formation = pickFormation(zone, Math.random());
     const cap = zone.maxConcurrentRandomMobs - this.countRandomMobs(world);
-    const wantSpawn = Math.min(groupSize, cap);
+    const wantSpawn = Math.min(formation.mobs.length, cap);
     if (wantSpawn <= 0) return 0;
 
     let actuallySpawned = 0;
-    const spawnedAtMs = performance.now();
     for (let i = 0; i < wantSpawn; i++) {
+      const kind = formation.mobs[i]!;
       const cell = this.findSpawnCell(world, px, py);
       if (!cell) break;
-      const mob = spawnMob(world, entry.kind, cell.gx, cell.gy);
-      world.addComponent(mob, 'RandomEncounter', { spawnedAtMs });
+      const mob = spawnMob(world, kind, cell.gx, cell.gy);
+      world.addComponent(mob, 'RandomEncounter', {});
       // Aggro the player immediately — random encounters shouldn't have a
       // "wander into aggroRange" delay; the meter trigger is the encounter.
       world.addComponent(mob, 'CombatIntent', { targetId: playerId });
-      this.registerSpawn(mob, entry.kind);
+      this.registerSpawn(mob, kind);
       actuallySpawned++;
     }
     return actuallySpawned;

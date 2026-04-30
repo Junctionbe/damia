@@ -1,7 +1,7 @@
 import type { System, World } from '@core/ecs';
 import { worldToGrid } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
-import { COMBAT, computeDamage } from '@data/balance';
+import { computeDamage } from '@data/balance';
 import { spawnFloatingText } from '@gameplay/entities/floatingText';
 import { playSfx } from '@services/AudioManager';
 
@@ -112,6 +112,3 @@ export class CombatSystem implements System<Components> {
     this.lastTargetRecheckMs.clear();
   }
 }
-
-// Re-export a constant so external code can reference combat constants without importing balance.
-export const COMBAT_CONSTANTS = COMBAT;

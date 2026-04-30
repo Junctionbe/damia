@@ -19,6 +19,7 @@ import { spawnProp } from '@gameplay/entities/props';
 import { spawnExit } from '@gameplay/entities/props/exit';
 import { spawnMob } from '@gameplay/entities/mobs';
 import { spawnInteractable } from '@gameplay/entities/interactables';
+import { spawnItem } from '@gameplay/entities/items';
 import { InputController } from '@gameplay/controls/InputController';
 import { PathfindingSystem } from '@gameplay/systems/PathfindingSystem';
 import { MovementSystem } from '@gameplay/systems/MovementSystem';
@@ -38,6 +39,8 @@ import { InteractableSystem } from '@gameplay/systems/InteractableSystem';
 import { ForestMap, buildCollisionGrid } from './MapLoader';
 import { propBlocks } from '@data/props';
 import { ADDITIONS, type AdditionKind, type MobKind } from '@data/balance';
+import { DART_ADDITION_UNLOCKS_BY_LEVEL, applyDartRow } from '@data/dart';
+import { xpThresholdForLevel } from '@data/progression';
 import { ITEMS, type ItemKind } from '@data/items';
 import { SPELLS, type SpellKind } from '@data/spells';
 import { spawnFloatingText } from '@gameplay/entities/floatingText';
@@ -46,11 +49,14 @@ import { AssetManager } from '@services/AssetManager';
 import { Toast } from '@ui/Toast';
 import { Hud } from '@ui/Hud';
 import { Hotbar, type HotbarSlot } from '@ui/Hotbar';
+import { AdditionsBar } from '@ui/AdditionsBar';
 import { MiniMap } from '@ui/MiniMap';
 import { ZoneTitle } from '@ui/ZoneTitle';
 import { ActionLog } from '@ui/ActionLog';
 import { SettingsPanel } from '@ui/SettingsPanel';
 import { EncounterIndicator } from '@ui/EncounterIndicator';
+import { CursorOverlay } from '@ui/CursorOverlay';
+import { InventoryPanel } from '@ui/InventoryPanel';
 import { t } from '@services/I18nService';
 import { playMusic, playSfx, stopMusic } from '@services/AudioManager';
 import { SaveManager, type SaveDataV1 } from '@services/SaveManager';
@@ -59,6 +65,7 @@ import { GameOverScene } from '@scenes/GameOverScene';
 import { TitleScene } from '@scenes/TitleScene';
 
 const PLAYER_SP_MAX = 100;
+const PLAYER_MP_MAX = 60;
 /** Click-to-target tolerance: enemies whose center is within this world-px
  *  radius of the click count as the picked target. ~ 3/4 of a tile width. */
 const ENEMY_PICK_RADIUS_PX = 96;
@@ -81,18 +88,19 @@ export class ForestScene implements Scene {
   private settings: SettingsPanel | null = null;
   private encounterIndicator: EncounterIndicator | null = null;
   private encounterSystem: EncounterSystem | null = null;
-  /** Per-scene hotbar bindings. Slot 0 = Double Slash by default; items
-   *  auto-bind into the first empty slot when picked up. */
-  private hotbarSlots: HotbarSlot[] = [
-    { kind: 'addition', addition: 'doubleSlash' },
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
-  ];
+  private cursorOverlay: CursorOverlay | null = null;
+  private inventoryPanel: InventoryPanel | null = null;
+  /** Latest pointer position in world coords — set by pointermove on the viewport,
+   *  read each frame to detect enemy-hover for the cursor overlay. */
+  private lastMouseWorld: { x: number; y: number } | null = null;
+  /** Per-scene hotbar bindings. Hotbar is items-only now (additions live in
+   *  their own AdditionsBar bound to right-click). Items auto-bind into the
+   *  first empty slot when picked up. */
+  private hotbarSlots: HotbarSlot[] = [null, null, null, null, null, null, null, null];
+  /** Currently-active Addition fired by right-click. Switched by clicking a
+   *  slot in the AdditionsBar. */
+  private activeAddition: AdditionKind = 'doubleSlash';
+  private additionsBar: AdditionsBar | null = null;
 
   /** Active ground-targeting state. While set, the click handler commits/cancels
    *  the spell instead of moving Dart, and the cursor circle in fxLayer follows
@@ -161,9 +169,16 @@ export class ForestScene implements Scene {
         prog.level = this.saveData.progression.level;
         prog.xp = this.saveData.progression.xp;
         prog.xpToNext = this.saveData.progression.xpToNext;
+        // Apply Dart's TLoD-canonical row for the loaded level so stats match.
+        // Saved HP can stay (player might have been damaged when they saved);
+        // clamp to new max if the table for that level has lower HP.
+        const stats = this.world.getComponent(this.playerId, 'Stats');
+        const hp = this.world.getComponent(this.playerId, 'Health');
+        applyDartRow(stats, hp, prog.level, true);
       }
       // Slice into a mutable array — saveData.hotbar is readonly.
       this.hotbarSlots = this.saveData.hotbar.slice();
+      this.activeAddition = this.saveData.activeAddition;
     } else {
       // DEV: prefill some items + bind to hotbar slots so spell/heal flows can
       // be tested without farming. TODO: remove before ship.
@@ -174,6 +189,20 @@ export class ForestScene implements Scene {
       }
       this.hotbarSlots[1] = { kind: 'item', item: 'healingPotion' };
       this.hotbarSlots[2] = { kind: 'item', item: 'burnOut' };
+      // DEV: force-start at level 5 (HP 150 / atk 11 / def 12 / mat 11 / mdf 11)
+      // so the Forest is playable while we're still on TLoD-canonical Dart stats
+      // and action-RPG-tuned mobs. TODO: remove before ship.
+      const prog = this.world.getComponent(this.playerId, 'Progression');
+      const stats = this.world.getComponent(this.playerId, 'Stats');
+      const hp = this.world.getComponent(this.playerId, 'Health');
+      if (prog) {
+        prog.level = 5;
+        // Cumulative XP at LV5 = 200 (TLoD); next threshold = LV6 (= 345).
+        prog.xp = xpThresholdForLevel(5);
+        prog.xpToNext = xpThresholdForLevel(6);
+      }
+      applyDartRow(stats, hp, 5, false);
+      if (hp) hp.current = hp.max;
     }
 
     for (const prop of map.props) spawnProp(this.world, prop);
@@ -258,6 +287,38 @@ export class ForestScene implements Scene {
     this.settings = new SettingsPanel(ctx.app);
     this.encounterIndicator = new EncounterIndicator();
     this.layers.fx.addChild(this.encounterIndicator.node);
+
+    // Inventory modal — opened with `I`. Mounted on the UI layer; pause is
+    // handled in update() (skip systems while open). Callbacks delegate to
+    // helpers further down so the panel stays UI-only.
+    this.inventoryPanel = new InventoryPanel(ctx.app);
+    this.inventoryPanel.setCallbacks({
+      onBind: (kind, slotIdx) => this.bindItemToHotbar(kind, slotIdx),
+      onUse: (kind) => this.tryConsumeItem(kind),
+      onDrop: (kind) => this.dropItemToWorld(kind),
+    });
+    this.layers.ui.addChild(this.inventoryPanel.container);
+
+    // AdditionsBar — sits above the Hotbar. Click a slot to make it the active
+    // addition; right-click in the world casts the active one.
+    this.additionsBar = new AdditionsBar(ctx.app);
+    this.additionsBar.setOnSelect((kind) => {
+      this.activeAddition = kind;
+    });
+    this.layers.ui.addChild(this.additionsBar.container);
+
+    // Custom animated sword cursor — added at the app stage level so it sits
+    // above every layer (UI included) and isn't affected by camera scale.
+    this.cursorOverlay = new CursorOverlay(ctx.app, this.viewport);
+    ctx.app.stage.addChild(this.cursorOverlay.node);
+    // Track the latest world-space mouse position for per-frame hover detection.
+    const onPointerMoveTrack = (e: FederatedPointerEvent): void => {
+      if (!this.viewport) return;
+      const local = this.viewport.toWorld(e.global);
+      this.lastMouseWorld = { x: local.x, y: local.y };
+    };
+    this.viewport.on('pointermove', onPointerMoveTrack);
+    this.cleanups.push(() => this.viewport?.off('pointermove', onPointerMoveTrack));
     this.layers.ui.addChild(
       this.hud.container,
       this.hotbar.container,
@@ -336,6 +397,7 @@ export class ForestScene implements Scene {
     this.input.onClick((cmd) => {
       if (!this.world || this.playerId === null) return;
       if (this.settings?.isOpen) return;
+      if (this.inventoryPanel?.isOpen) return; // modal swallows clicks itself
       // Ground-targeting mode: left-click commits the spell, right-click cancels.
       // Always swallow the click here so it doesn't also trigger move/attack.
       if (this.groundTargeting) {
@@ -348,6 +410,12 @@ export class ForestScene implements Scene {
       if (this.world.hasComponent(this.playerId, 'Addition')) return;
       if (this.world.hasComponent(this.playerId, 'Spell')) return;
 
+      // Right-click anywhere = trigger the active addition. Targets the
+      // enemy under the cursor first, falls back to nearest in range.
+      if (cmd.button === 'right') {
+        this.tryTriggerAddition(this.activeAddition);
+        return;
+      }
       if (cmd.button === 'left') {
         const target = this.findEnemyAtCell(cmd.gx, cmd.gy);
         if (target !== null) {
@@ -405,6 +473,27 @@ export class ForestScene implements Scene {
     };
     document.addEventListener('visibilitychange', onVisibility);
     this.cleanups.push(() => document.removeEventListener('visibilitychange', onVisibility));
+
+    // Inventory key bindings — `I` toggles, `Esc` closes, `D` drops the
+    // selected item. The slot keys 1-8 are intercepted in `activateHotbarSlot`
+    // when the panel is open (binds the selected item instead of triggering).
+    const onInventoryKey = (e: KeyboardEvent): void => {
+      if (e.key === 'i' || e.key === 'I') {
+        if (!this.inventoryPanel) return;
+        if (this.inventoryPanel.isOpen) this.inventoryPanel.close();
+        else this.openInventoryPanel();
+        return;
+      }
+      if (this.inventoryPanel?.isOpen) {
+        if (e.key === 'Escape') this.inventoryPanel.close();
+        else if (e.key === 'd' || e.key === 'D') {
+          const sel = this.inventoryPanel.getSelectedKind();
+          if (sel) this.dropItemToWorld(sel);
+        }
+      }
+    };
+    window.addEventListener('keydown', onInventoryKey);
+    this.cleanups.push(() => window.removeEventListener('keydown', onInventoryKey));
   }
 
   exit(ctx: GameContext): void {
@@ -429,6 +518,13 @@ export class ForestScene implements Scene {
     this.encounterIndicator?.destroy();
     this.encounterIndicator = null;
     this.encounterSystem = null;
+    this.cursorOverlay?.destroy();
+    this.cursorOverlay = null;
+    this.lastMouseWorld = null;
+    this.inventoryPanel?.destroy();
+    this.inventoryPanel = null;
+    this.additionsBar?.destroy();
+    this.additionsBar = null;
     this.input?.destroy();
     this.input = null;
     for (const sys of this.systems) sys.destroy?.();
@@ -457,6 +553,20 @@ export class ForestScene implements Scene {
       // overlay handles its own input — no ticking needed here.
       return;
     }
+    if (this.inventoryPanel?.isOpen) {
+      // Same hard pause as Settings. Refresh the panel state each frame so
+      // count badges + hotbar mini follow live changes (e.g. when the player
+      // uses an item via right-click while the panel is open).
+      if (this.playerId !== null) {
+        const inv = this.world.getComponent(this.playerId, 'Inventory');
+        this.inventoryPanel.setState({
+          items: inv ? { ...inv.items } : {},
+          gold: inv?.gold ?? 0,
+          hotbarSlots: this.hotbarSlots,
+        });
+      }
+      return;
+    }
     for (const sys of this.systems) {
       if (!this.world) break;
       sys.update(dt, this.world);
@@ -467,11 +577,35 @@ export class ForestScene implements Scene {
       const hp = this.world.getComponent(this.playerId, 'Health');
       if (hp && this.hud) this.hud.setHealth(hp.current, hp.max);
       if (this.hud) {
+        // SP / MP are placeholders until Dragoon mode wires real pools.
         this.hud.setSp(0, PLAYER_SP_MAX);
+        this.hud.setMp(0, PLAYER_MP_MAX);
         const inv = this.world.getComponent(this.playerId, 'Inventory');
         this.hud.setGold(inv?.gold ?? 0);
         const prog = this.world.getComponent(this.playerId, 'Progression');
-        if (prog) this.hud.setLevel(prog.level);
+        if (prog) {
+          this.hud.setLevel(prog.level);
+          this.hud.setXp(prog.xp, prog.xpToNext);
+        }
+        if (this.viewport) this.hud.setZoom(this.viewport.scale.x);
+      }
+
+      // Cursor: switch to attack-sword animation when the mouse hovers an
+      // enemy in click-pick range, otherwise default OS cursor. Suppressed
+      // during ground-target mode (the AoE reticle is the primary feedback)
+      // and while the settings panel is open.
+      if (this.cursorOverlay) {
+        let mode: 'default' | 'attack' = 'default';
+        if (
+          this.lastMouseWorld &&
+          !this.groundTargeting &&
+          !this.settings?.isOpen &&
+          this.findEnemyAtWorld(this.lastMouseWorld.x, this.lastMouseWorld.y) !== null
+        ) {
+          mode = 'attack';
+        }
+        this.cursorOverlay.setMode(mode);
+        this.cursorOverlay.update(dt);
       }
 
       if (this.encounterIndicator && this.encounterSystem) {
@@ -486,21 +620,29 @@ export class ForestScene implements Scene {
 
       // Hotbar repaint: gather addition cooldowns + item counts each frame and
       // hand them to the dumb renderer alongside the slot bindings.
-      if (this.hotbar) {
-        const cd = this.world.getComponent(this.playerId, 'SkillCooldown');
-        const additionCooldowns: Partial<Record<AdditionKind, number>> = {};
-        if (cd) {
-          for (const k of Object.keys(cd.remainingMs) as AdditionKind[]) {
-            const remaining = cd.remainingMs[k] ?? 0;
-            const total = ADDITIONS[k].cooldownMs;
-            if (remaining > 0 && total > 0) additionCooldowns[k] = Math.min(1, remaining / total);
-          }
+      // The AdditionsBar shares the cooldowns map so its own slot also paints.
+      const cd = this.world.getComponent(this.playerId, 'SkillCooldown');
+      const additionCooldowns: Partial<Record<AdditionKind, number>> = {};
+      if (cd) {
+        for (const k of Object.keys(cd.remainingMs) as AdditionKind[]) {
+          const remaining = cd.remainingMs[k] ?? 0;
+          const total = ADDITIONS[k].cooldownMs;
+          if (remaining > 0 && total > 0) additionCooldowns[k] = Math.min(1, remaining / total);
         }
+      }
+      if (this.hotbar) {
         const inv = this.world.getComponent(this.playerId, 'Inventory');
         this.hotbar.setState({
           slots: this.hotbarSlots,
           additionCooldowns,
           itemCounts: inv?.items ?? {},
+        });
+      }
+      if (this.additionsBar) {
+        this.additionsBar.setState({
+          unlocked: this.unlockedAdditions(),
+          active: this.activeAddition,
+          cooldowns: additionCooldowns,
         });
       }
     }
@@ -538,18 +680,55 @@ export class ForestScene implements Scene {
         xp: prog?.xp ?? 0,
         xpToNext: prog?.xpToNext ?? 100,
       },
+      activeAddition: this.activeAddition,
     });
   }
 
   /**
    * Player pressed a number key 0..7. Resolve the hotbar slot binding and
    * dispatch to the right handler. Empty slot → silent no-op.
+   *
+   * Special case: when the inventory modal is open AND has a selected item,
+   * the same key binds the selection to that hotbar slot instead of firing
+   * the slot's existing action.
    */
   private activateHotbarSlot(slotIdx: number): void {
+    if (this.inventoryPanel?.isOpen) {
+      const sel = this.inventoryPanel.getSelectedKind();
+      if (sel) this.bindItemToHotbar(sel, slotIdx);
+      return;
+    }
     const slot = this.hotbarSlots[slotIdx] ?? null;
     if (!slot) return;
     if (slot.kind === 'addition') this.tryTriggerAddition(slot.addition);
     else if (slot.kind === 'item') this.tryConsumeItem(slot.item);
+  }
+
+  /** Filter Dart's per-level addition unlock schedule against ADDITIONS so we
+   *  only return kinds that actually exist in the engine today. As we add
+   *  Volcano / Burning Rush / etc. into ADDITIONS, they appear here once the
+   *  player's level reaches their unlock. */
+  private unlockedAdditions(): ReadonlyArray<AdditionKind> {
+    if (!this.world || this.playerId === null) return ['doubleSlash'];
+    const prog = this.world.getComponent(this.playerId, 'Progression');
+    const level = prog?.level ?? 1;
+    const out: AdditionKind[] = [];
+    for (const [unlockLv, slug] of DART_ADDITION_UNLOCKS_BY_LEVEL) {
+      if (level < unlockLv) continue;
+      if (slug in ADDITIONS) out.push(slug as AdditionKind);
+    }
+    return out.length > 0 ? out : ['doubleSlash'];
+  }
+
+  /** Snapshot the current inventory + hotbar bindings into the modal and show it. */
+  private openInventoryPanel(): void {
+    if (!this.inventoryPanel || !this.world || this.playerId === null) return;
+    const inv = this.world.getComponent(this.playerId, 'Inventory');
+    this.inventoryPanel.open({
+      items: inv ? { ...inv.items } : {},
+      gold: inv?.gold ?? 0,
+      hotbarSlots: this.hotbarSlots,
+    });
   }
 
   /** Bind a freshly-picked item into the first empty hotbar slot, if any. */
@@ -566,6 +745,39 @@ export class ForestScene implements Scene {
       }
     }
     // No empty slot — silent; player can rebind later via inventory UI.
+  }
+
+  /** Manual bind triggered from the InventoryPanel (drag or 1-8 key). Replaces
+   *  any existing binding in that slot — including additions. If the item is
+   *  already bound to another slot, the previous binding is cleared so the same
+   *  item kind can't occupy two slots simultaneously. */
+  private bindItemToHotbar(kind: ItemKind, slotIdx: number): void {
+    if (slotIdx < 0 || slotIdx >= this.hotbarSlots.length) return;
+    if (!ITEMS[kind].bindable) return;
+    for (let i = 0; i < this.hotbarSlots.length; i++) {
+      const s = this.hotbarSlots[i];
+      if (s && s.kind === 'item' && s.item === kind) this.hotbarSlots[i] = null;
+    }
+    this.hotbarSlots[slotIdx] = { kind: 'item', item: kind };
+  }
+
+  /** Drop one of `kind` from the player's inventory onto the ground at the
+   *  player's current position, as a pickable Item entity. A short grace
+   *  period prevents the auto-pickup from grabbing it back next frame.
+   *  Decrement count; no-op if count was 0. */
+  private dropItemToWorld(kind: ItemKind): void {
+    if (!this.world || this.playerId === null) return;
+    const inv = this.world.getComponent(this.playerId, 'Inventory');
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!inv || !pos) return;
+    const count = inv.items[kind] ?? 0;
+    if (count <= 0) return;
+    inv.items[kind] = count - 1;
+    if ((inv.items[kind] ?? 0) <= 0) delete inv.items[kind];
+    const id = spawnItem(this.world, kind, pos.x, pos.y);
+    const item = this.world.getComponent(id, 'Item');
+    // 1.5 s grace — long enough for the player to step away without spam-pickup.
+    if (item) item.pickableAfterMs = performance.now() + 1500;
   }
 
   /**
@@ -892,8 +1104,14 @@ export class ForestScene implements Scene {
    * still hits the right target. Falls back to no pick if nothing is in range.
    */
   private findEnemyAtCell(gx: number, gy: number): Entity | null {
+    const p = gridToWorld(gx, gy);
+    return this.findEnemyAtWorld(p.x, p.y);
+  }
+
+  /** World-coord variant — used by hover detection (cursor) where we have the
+   *  raw mouse world position and don't want to round-trip through the grid. */
+  private findEnemyAtWorld(wx: number, wy: number): Entity | null {
     if (!this.world) return null;
-    const click = gridToWorld(gx, gy);
     let bestId: Entity | null = null;
     let bestDist = ENEMY_PICK_RADIUS_PX;
     for (const id of this.world.query(['Health', 'Position', 'Faction'])) {
@@ -906,7 +1124,7 @@ export class ForestScene implements Scene {
       if (!fac || fac.side === 'player') continue;
       const pos = this.world.getComponent(id, 'Position');
       if (!pos) continue;
-      const d = Math.hypot(pos.x - click.x, pos.y - click.y);
+      const d = Math.hypot(pos.x - wx, pos.y - wy);
       if (d < bestDist) {
         bestDist = d;
         bestId = id;

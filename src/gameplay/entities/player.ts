@@ -2,7 +2,8 @@ import { gridToWorld } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
 import type { Entity, World } from '@core/ecs';
 import { PLAYER_BASE } from '@data/balance';
-import { xpToNext } from '@data/progression';
+import { getDartStatsAtLevel } from '@data/dart';
+import { xpThresholdForLevel } from '@data/progression';
 
 export interface SpawnPlayerOptions {
   gx: number;
@@ -14,12 +15,15 @@ export interface SpawnPlayerOptions {
 export function spawnPlayer(world: World<Components>, opts: SpawnPlayerOptions): Entity {
   const { x, y } = gridToWorld(opts.gx, opts.gy);
   const id = world.createEntity();
-  const max = PLAYER_BASE.health;
+  // Pull Dart's TLoD-canonical level-1 row for HP / AT / DF / MAT / MDF.
+  // PLAYER_BASE keeps the action-RPG-only fields (atkSpeed / range / aggroRange /
+  // hit/avoid percentages / SPEED scalar) — they're not in the per-level table.
+  const lvl1 = getDartStatsAtLevel(1);
+  const max = lvl1.hp;
   const startHp = Math.max(1, Math.min(max, opts.hp ?? max));
 
   world.addComponent(id, 'Player', {});
   world.addComponent(id, 'Position', { x, y });
-  world.addComponent(id, 'Velocity', { vx: 0, vy: 0 });
   world.addComponent(id, 'Speed', { value: PLAYER_BASE.speed });
   world.addComponent(id, 'Pathfinder', {
     targetGrid: null,
@@ -46,14 +50,24 @@ export function spawnPlayer(world: World<Components>, opts: SpawnPlayerOptions):
   world.addComponent(id, 'Health', {
     current: startHp,
     max,
-    invulnUntilMs: 0,
   });
-  world.addComponent(id, 'Stats', { ...PLAYER_BASE.stats });
+  world.addComponent(id, 'Stats', {
+    ...PLAYER_BASE.stats,
+    atk: lvl1.atk,
+    def: lvl1.def,
+    magicAtk: lvl1.magicAtk,
+    magicDef: lvl1.magicDef,
+  });
   world.addComponent(id, 'Faction', { side: 'player' });
   world.addComponent(id, 'AttackCooldown', { remainingMs: 0 });
   world.addComponent(id, 'SkillCooldown', { remainingMs: {} });
   world.addComponent(id, 'Inventory', { items: {}, gold: 0 });
-  world.addComponent(id, 'Progression', { level: 1, xp: 0, xpToNext: xpToNext(1) });
+  // xpToNext = cumulative XP threshold to reach LV 2 (= 20 for Dart).
+  world.addComponent(id, 'Progression', {
+    level: 1,
+    xp: 0,
+    xpToNext: xpThresholdForLevel(2),
+  });
 
   return id;
 }

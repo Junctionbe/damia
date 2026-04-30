@@ -16,10 +16,9 @@ export function spawnMob(world: World<Components>, kind: MobKind, gx: number, gy
   const { x, y } = gridToWorld(gx, gy);
   const id = world.createEntity();
   world.addComponent(id, 'Position', { x, y });
-  world.addComponent(id, 'Velocity', { vx: 0, vy: 0 });
   world.addComponent(id, 'Speed', { value: def.speed });
   world.addComponent(id, 'Pathfinder', { targetGrid: null, waypoints: null, computing: false });
-  world.addComponent(id, 'Health', { current: def.health, max: def.health, invulnUntilMs: 0 });
+  world.addComponent(id, 'Health', { current: def.health, max: def.health });
   world.addComponent(id, 'Stats', { ...def.stats });
   world.addComponent(id, 'Faction', { side: 'enemy' });
   world.addComponent(id, 'AttackCooldown', { remainingMs: 0 });
