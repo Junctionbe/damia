@@ -233,8 +233,12 @@ export function playMusic(alias: MusicAlias): void {
 
   let howl = musicHowls.get(alias);
   if (!howl) {
+    // Prepend Vite's BASE_URL so the asset URL works under the GitHub Pages
+    // subpath (`/damia/`). In dev BASE_URL = `/` so behaviour is unchanged.
+    const base = import.meta.env.BASE_URL || '/';
+    const src = base + MUSIC_MANIFEST[alias].url.replace(/^\//, '');
     howl = new Howl({
-      src: [MUSIC_MANIFEST[alias].url],
+      src: [src],
       loop: true,
       html5: true, // stream large files without decoding the whole buffer
       preload: true,

@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Relative path so the icon resolves correctly under both `/` (dev)
+         and `/damia/` (prod GitHub Pages) — `<link>` href starting with `/`
+         is NOT rewritten by Vite's base, but a relative path works in both. -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Damia — TLoD action-RPG isometric web game" />
     <title>Damia</title>

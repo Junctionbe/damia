@@ -111,6 +111,19 @@ export type AssetAlias = keyof typeof MANIFEST;
 
 const TEXTURES = new Map<AssetAlias, Texture>();
 
+/**
+ * Prepend Vite's `BASE_URL` to a manifest path. Production builds for GitHub
+ * Pages are served from `/damia/`, so a manifest URL like `/assets/foo.png`
+ * has to become `/damia/assets/foo.png` at runtime — otherwise the browser
+ * 404s. Dev mode has BASE_URL = `/` so the original path is preserved.
+ */
+function resolveAssetUrl(manifestUrl: string): string {
+  const base = import.meta.env.BASE_URL || '/';
+  // Strip leading slash from the manifest path so `base + path` doesn't
+  // produce a double `//`.
+  return base + manifestUrl.replace(/^\//, '');
+}
+
 export const AssetManager = {
   /** Preload every texture-kind asset so getTexture() can be called synchronously by RenderSystem. */
   async preload(): Promise<void> {
@@ -119,7 +132,7 @@ export const AssetManager = {
       const asset = MANIFEST[alias];
       if (asset.kind === 'texture') {
         tasks.push(
-          Assets.load(asset.url).then((tex) => {
+          Assets.load(resolveAssetUrl(asset.url)).then((tex) => {
             const texture = tex as Texture;
             // Tile textures need REPEAT wrap so polygon-fill samples wrap across
             // the texture boundary (otherwise Pixi clamps to edge and we see seams
