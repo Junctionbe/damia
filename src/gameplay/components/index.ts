@@ -10,6 +10,7 @@ import type { Exit } from './Exit';
 import type { Faction } from './Faction';
 import type { FloatingText } from './FloatingText';
 import type { Health } from './Health';
+import type { Hidden } from './Hidden';
 import type { Interactable } from './Interactable';
 import type { Inventory } from './Inventory';
 import type { Item } from './Item';
@@ -35,6 +36,7 @@ export interface Components {
   Collider: Collider;
   Exit: Exit;
   Health: Health;
+  Hidden: Hidden;
   Stats: Stats;
   Faction: Faction;
   CombatIntent: CombatIntent;
@@ -70,6 +72,7 @@ export type {
   Faction,
   FloatingText,
   Health,
+  Hidden,
   Interactable,
   Inventory,
   Item,

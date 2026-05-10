@@ -1,5 +1,6 @@
 {
   "name": "Forest of Seles",
+  "fov": true,
   "size": { "w": 32, "h": 32 },
   "spawn": { "gx": 16, "gy": 2 },
   "pathZones": [
@@ -61,7 +62,7 @@
     { "kind": "tree", "gx": 28, "gy": 21 }
   ],
   "exits": [
-    { "kind": "transition", "gx": 16, "gy": 31, "targetScene": "demo-end" },
+    { "kind": "transition", "gx": 16, "gy": 31, "targetScene": "world-map" },
     { "kind": "blocked", "gx": 0, "gy": 16, "messageKey": "exits.westPathOvergrown" }
   ],
   "mobs": [],

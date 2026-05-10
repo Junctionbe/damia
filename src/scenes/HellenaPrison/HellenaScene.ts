@@ -18,7 +18,6 @@ import { spawnPlayer } from '@gameplay/entities/player';
 import { spawnProp } from '@gameplay/entities/props';
 import { spawnExit } from '@gameplay/entities/props/exit';
 import { spawnMob } from '@gameplay/entities/mobs';
-import { spawnInteractable } from '@gameplay/entities/interactables';
 import { spawnItem } from '@gameplay/entities/items';
 import { InputController } from '@gameplay/controls/InputController';
 import { PathfindingSystem } from '@gameplay/systems/PathfindingSystem';
@@ -33,14 +32,15 @@ import { AISystem } from '@gameplay/systems/AISystem';
 import { DefenseSystem } from '@gameplay/systems/DefenseSystem';
 import { DeathSystem } from '@gameplay/systems/DeathSystem';
 import { DyingSystem } from '@gameplay/systems/DyingSystem';
-import { EncounterSystem } from '@gameplay/systems/EncounterSystem';
 import { ItemPickupSystem } from '@gameplay/systems/ItemPickupSystem';
-import { InteractableSystem } from '@gameplay/systems/InteractableSystem';
-import { ForestMap, buildCollisionGrid, buildSightBlockingGrid } from './MapLoader';
+import {
+  buildCollisionGrid,
+  buildSightBlockingGrid,
+  type MapData,
+} from '../ForestOfSeles/MapLoader';
 import { propBlocks, propBlocksSight } from '@data/props';
 import { ADDITIONS, type AdditionKind, type MobKind } from '@data/balance';
 import { DART_ADDITION_UNLOCKS_BY_LEVEL, applyDartRow } from '@data/dart';
-import { xpThresholdForLevel } from '@data/progression';
 import { ITEMS, type ItemKind } from '@data/items';
 import { SPELLS, type SpellKind } from '@data/spells';
 import { spawnFloatingText } from '@gameplay/entities/floatingText';
@@ -54,7 +54,6 @@ import { MiniMap } from '@ui/MiniMap';
 import { ZoneTitle } from '@ui/ZoneTitle';
 import { ActionLog } from '@ui/ActionLog';
 import { SettingsPanel } from '@ui/SettingsPanel';
-import { EncounterIndicator } from '@ui/EncounterIndicator';
 import { CursorOverlay } from '@ui/CursorOverlay';
 import { InventoryPanel } from '@ui/InventoryPanel';
 import { VisionHalo } from '@ui/VisionHalo';
@@ -67,14 +66,42 @@ import { WorldMapScene } from '@scenes/WorldMapScene';
 import { GameOverScene } from '@scenes/GameOverScene';
 import { TitleScene } from '@scenes/TitleScene';
 
+/**
+ * Inline placeholder map for Hellena Prison. 16×16 grid with a vertical
+ * corridor and an exit at the top that returns to the WorldMap. No NPC, no
+ * random encounters yet — just a few mobs to brawl with so the zone is
+ * functional. Replace with a proper map.json once Hellena gets real assets.
+ */
+const HellenaMap: MapData = {
+  name: 'Hellena Prison',
+  fov: true,
+  size: { w: 16, h: 16 },
+  spawn: { gx: 8, gy: 14 },
+  pathZones: [{ x: 7, y: 0, w: 2, h: 16 }],
+  props: [
+    // Stone "walls" along both sides of the corridor — uses the rock prop kind
+    // as a placeholder until prison-specific assets land.
+    { kind: 'rock', gx: 5, gy: 4 },
+    { kind: 'rock', gx: 10, gy: 4 },
+    { kind: 'rock', gx: 5, gy: 9 },
+    { kind: 'rock', gx: 10, gy: 9 },
+  ],
+  exits: [{ kind: 'transition', gx: 8, gy: 0, targetScene: 'world-map' }],
+  mobs: [
+    { kind: 'goblin', gx: 8, gy: 6 },
+    { kind: 'goblin', gx: 8, gy: 9 },
+  ],
+  interactables: [],
+};
+
 const PLAYER_SP_MAX = 100;
 const PLAYER_MP_MAX = 60;
 /** Click-to-target tolerance: enemies whose center is within this world-px
  *  radius of the click count as the picked target. ~ 3/4 of a tile width. */
 const ENEMY_PICK_RADIUS_PX = 96;
 
-export class ForestScene implements Scene {
-  readonly name = 'forest';
+export class HellenaScene implements Scene {
+  readonly name = 'hellena';
 
   private layers: Layers | null = null;
   private viewport: Viewport | null = null;
@@ -89,8 +116,6 @@ export class ForestScene implements Scene {
   private zoneTitle: ZoneTitle | null = null;
   private actionLog: ActionLog | null = null;
   private settings: SettingsPanel | null = null;
-  private encounterIndicator: EncounterIndicator | null = null;
-  private encounterSystem: EncounterSystem | null = null;
   private cursorOverlay: CursorOverlay | null = null;
   private fog: FogOfWar | null = null;
   private fogOverlay: FogOfWarOverlay | null = null;
@@ -128,7 +153,7 @@ export class ForestScene implements Scene {
   constructor(private readonly saveData: SaveDataV5 | null = null) {}
 
   enter(ctx: GameContext): void {
-    const map = ForestMap;
+    const map = HellenaMap;
 
     this.tilemap = new TileMap({
       width: map.size.w,
@@ -152,34 +177,23 @@ export class ForestScene implements Scene {
     this.layers.mountUi(ctx.app.stage);
     this.layers.ground.addChild(this.tilemap.container);
 
-    // Per-zone fog state — owns the revealed grid that drives both the world
-    // overlay and the minimap. Seeded from the save when revisiting; new
-    // games start fully unrevealed. The sight-blocking grid wires the
-    // FogOfWar's LoS check to the zone's tall props (trees + boulders) so
-    // tiles behind them stay hidden until the player steps around.
+    // Per-zone fog state — see ForestScene for the full rationale. Hellena
+    // gets its own grid (independent reveal state) keyed by 'hellena' in the
+    // save's fogByZone map. The placeholder map only has rock props (sight-
+    // blockers), so LoS shadows show up on either side of the corridor.
     const sightGrid = buildSightBlockingGrid(map, propBlocksSight);
     this.fog = new FogOfWar(
       map.size.w,
       map.size.h,
       (gx, gy) => sightGrid[gy]?.[gx] ?? false,
-      this.saveData?.fogByZone?.forest,
+      this.saveData?.fogByZone?.hellena,
     );
 
-    // Wild zones use a two-layer fog system:
-    //   1. FogOfWarOverlay (world-space, per-tile) — paints opaque blackouts
-    //      over UNEXPLORED cells only. Provides the hard "wall of unknown".
-    //   2. VisionHalo (screen-space, radial) — paints a soft Diablo-style
-    //      torch halo around the player. Provides the smooth vision↔memory
-    //      transition without per-tile staircase artefacts.
-    // Camera-follow is forced ON because the halo is centred on the screen,
-    // not the player's world coords — panning would orphan Dart in the dark.
     if (map.fov) {
       this.fogOverlay = new FogOfWarOverlay(this.fog);
       this.layers.fog.addChild(this.fogOverlay.container);
       this.visionHalo = new VisionHalo(ctx.app);
       this.visionHalo.mount(ctx.app.stage, this.viewport);
-      // Strip viewport pan / wheel-zoom so the player can't drift the camera
-      // off the lit area by accident.
       this.viewport.plugins.remove('drag');
       this.viewport.plugins.remove('wheel');
       this.viewport.plugins.remove('pinch');
@@ -188,9 +202,10 @@ export class ForestScene implements Scene {
 
     this.world = new World<Components>();
     // Saved player position only applies when the save was made IN this zone —
-    // otherwise the gx/gy belong to a different map's grid. Cross-zone arrivals
-    // (e.g. Hellena → WorldMap → Forest) always spawn at the map's entry point.
-    const fromThisZone = this.saveData?.currentZoneId === 'forest';
+    // otherwise the gx/gy belong to a different map's grid and would put the
+    // player out of bounds. Cross-zone arrivals always spawn at the map's
+    // entry point.
+    const fromThisZone = this.saveData?.currentZoneId === 'hellena';
     const spawn =
       fromThisZone && this.saveData
         ? { gx: this.saveData.player.gx, gy: this.saveData.player.gy }
@@ -202,7 +217,11 @@ export class ForestScene implements Scene {
       ...(startHp !== undefined ? { hp: startHp } : {}),
     });
 
-    // Restore inventory + hotbar + progression from the save (no-op for new games).
+    // Restore character state (inventory, progression, hotbar, active addition)
+    // from any save — these travel with the player across zones. No-op for new
+    // games (saveData null), which only happens if the player jumps straight to
+    // Hellena from the WorldMap on a fresh title (currently impossible — Continue
+    // requires a save).
     if (this.saveData) {
       const inv = this.world.getComponent(this.playerId, 'Inventory');
       if (inv) {
@@ -215,8 +234,8 @@ export class ForestScene implements Scene {
         prog.xp = this.saveData.progression.xp;
         prog.xpToNext = this.saveData.progression.xpToNext;
         // Apply Dart's TLoD-canonical row for the loaded level so stats match.
-        // Same-zone resume: keep the saved HP (player might have been damaged).
-        // Cross-zone arrival: top up to max so travelling refreshes the player.
+        // For cross-zone arrivals we also reset HP to max (fresh-on-arrival),
+        // so the player isn't stuck at 1 HP after travelling.
         const stats = this.world.getComponent(this.playerId, 'Stats');
         const hp = this.world.getComponent(this.playerId, 'Health');
         applyDartRow(stats, hp, prog.level, fromThisZone);
@@ -225,30 +244,6 @@ export class ForestScene implements Scene {
       // Slice into a mutable array — saveData.hotbar is readonly.
       this.hotbarSlots = this.saveData.hotbar.slice();
       this.activeAddition = this.saveData.activeAddition;
-    } else {
-      // DEV: prefill some items + bind to hotbar slots so spell/heal flows can
-      // be tested without farming. TODO: remove before ship.
-      const inv = this.world.getComponent(this.playerId, 'Inventory');
-      if (inv) {
-        inv.items.healingPotion = 5;
-        inv.items.burnOut = 3;
-      }
-      this.hotbarSlots[1] = { kind: 'item', item: 'healingPotion' };
-      this.hotbarSlots[2] = { kind: 'item', item: 'burnOut' };
-      // DEV: force-start at level 5 (HP 150 / atk 11 / def 12 / mat 11 / mdf 11)
-      // so the Forest is playable while we're still on TLoD-canonical Dart stats
-      // and action-RPG-tuned mobs. TODO: remove before ship.
-      const prog = this.world.getComponent(this.playerId, 'Progression');
-      const stats = this.world.getComponent(this.playerId, 'Stats');
-      const hp = this.world.getComponent(this.playerId, 'Health');
-      if (prog) {
-        prog.level = 5;
-        // Cumulative XP at LV5 = 200 (TLoD); next threshold = LV6 (= 345).
-        prog.xp = xpThresholdForLevel(5);
-        prog.xpToNext = xpThresholdForLevel(6);
-      }
-      applyDartRow(stats, hp, 5, false);
-      if (hp) hp.current = hp.max;
     }
 
     for (const prop of map.props) spawnProp(this.world, prop);
@@ -256,9 +251,6 @@ export class ForestScene implements Scene {
     for (const mob of map.mobs) {
       const id = spawnMob(this.world, mob.kind, mob.gx, mob.gy);
       this.mobKinds.set(id, mob.kind);
-    }
-    for (const inter of map.interactables) {
-      spawnInteractable(this.world, inter);
     }
 
     const collisionGrid = buildCollisionGrid(map, propBlocks);
@@ -270,7 +262,6 @@ export class ForestScene implements Scene {
     const swing = new AttackSwingSystem();
     const defense = new DefenseSystem();
     const exits = new ExitSystem();
-    const interactables = new InteractableSystem();
     const death = new DeathSystem((id) => this.mobKinds.get(id) ?? null);
     const dying = new DyingSystem();
     const addition = new AdditionSystem();
@@ -280,17 +271,7 @@ export class ForestScene implements Scene {
     const floating = new FloatingTextSystem(this.layers.fx);
     const entityHud = new EntityHudSystem(this.layers.fx);
     const vfx = new VfxSystem(this.layers.fx);
-    // Random encounters: walking accumulates px → spawn mobs in a ring around
-    // the player at full meter. Player-relative (not camera-relative) so it
-    // works regardless of camera-follow state.
-    this.encounterSystem = new EncounterSystem(
-      'forest',
-      { width: map.size.w, height: map.size.h },
-      (gx, gy) => collisionGrid[gy]?.[gx] === 0,
-      (entity, kind) => {
-        this.mobKinds.set(entity, kind);
-      },
-    );
+    // No random encounters in the Hellena placeholder — only scripted mobs.
     this.systems = [
       cooldown,
       ai,
@@ -298,13 +279,11 @@ export class ForestScene implements Scene {
       pathfinding,
       movement,
       exits,
-      interactables,
       defense,
       death,
       dying,
       addition,
       spell,
-      this.encounterSystem,
       pickup,
       // `swing` must run AFTER combat (which spawns the AttackSwing) and BEFORE
       // render, but its `dt` advance must not happen on the same frame the swing
@@ -330,8 +309,6 @@ export class ForestScene implements Scene {
     this.zoneTitle = new ZoneTitle(ctx.app);
     this.actionLog = new ActionLog(ctx.app);
     this.settings = new SettingsPanel(ctx.app);
-    this.encounterIndicator = new EncounterIndicator();
-    this.layers.fx.addChild(this.encounterIndicator.node);
 
     // Inventory modal — opened with `I`. Mounted on the UI layer; pause is
     // handled in update() (skip systems while open). Callbacks delegate to
@@ -373,11 +350,11 @@ export class ForestScene implements Scene {
       this.settings.container,
     );
 
-    this.zoneTitle.show(t('zones.forestOfSeles.name'), t('zones.forestOfSeles.objective'));
+    this.zoneTitle.show(t('zones.hellenaPrison.name'), t('zones.hellenaPrison.objective'));
 
     // Ambient music. AudioContext was already unlocked at TitleScene click;
     // playMusic is idempotent so re-entering the same scene won't restart it.
-    playMusic('music.forestAmbient');
+    playMusic('music.titleScreen');
 
     this.settings.onAction((action) => {
       this.settings?.hide();
@@ -398,10 +375,6 @@ export class ForestScene implements Scene {
       } else if (exit.kind === 'blocked') {
         this.toast?.show(t(exit.messageKey));
       }
-    });
-
-    interactables.onTrigger(({ interactable }) => {
-      this.toast?.show(t(interactable.messageKey));
     });
 
     death.onPlayerDeath(() => {
@@ -509,8 +482,7 @@ export class ForestScene implements Scene {
     this.input.onSlot((slotIdx) => this.activateHotbarSlot(slotIdx));
 
     this.input.onCameraFollowToggle((on) => {
-      // Wild zones (FoV ON) lock the camera onto the player — letting the
-      // toggle override that would walk Dart out of his lit zone.
+      // Wild zones (FoV ON) keep the camera locked on the player.
       if (this.fogOverlay) return;
       this.cameraFollow = on;
     });
@@ -563,9 +535,6 @@ export class ForestScene implements Scene {
     this.actionLog = null;
     this.settings?.destroy();
     this.settings = null;
-    this.encounterIndicator?.destroy();
-    this.encounterIndicator = null;
-    this.encounterSystem = null;
     this.cursorOverlay?.destroy();
     this.cursorOverlay = null;
     this.fogOverlay?.destroy();
@@ -661,16 +630,6 @@ export class ForestScene implements Scene {
         this.cursorOverlay.update(dt);
       }
 
-      if (this.encounterIndicator && this.encounterSystem) {
-        this.encounterIndicator.setFill(this.encounterSystem.fraction(), dt);
-        const playerPos = this.world.getComponent(this.playerId, 'Position');
-        if (playerPos) {
-          // Float ~96 px above the player's tile-bottom point — same convention
-          // as the HP bar offset, just a bit higher to clear the head.
-          this.encounterIndicator.setPosition(playerPos.x, playerPos.y - 96);
-        }
-      }
-
       // Hotbar repaint: gather addition cooldowns + item counts each frame and
       // hand them to the dumb renderer alongside the slot bindings.
       // The AdditionsBar shares the cooldowns map so its own slot also paints.
@@ -701,8 +660,6 @@ export class ForestScene implements Scene {
     }
     // Fog of war: reveal cells around the player ONCE per frame, then push the
     // player's grid coords into both renderers so they paint the same state.
-    // The MiniMap and FogOfWarOverlay both READ from `this.fog`; mutating it
-    // here keeps a single source of truth.
     if (this.fog && this.playerId !== null) {
       const pos = this.world.getComponent(this.playerId, 'Position');
       if (pos) {
@@ -711,17 +668,9 @@ export class ForestScene implements Scene {
         const pgy = Math.round(grid.y);
         this.fog.revealCellsAround(pgx, pgy);
         this.fogOverlay?.update(pgx, pgy);
-        // Tag/untag non-player Faction entities (mobs) with `Hidden` based on
-        // current line of sight. The world-space fog dims the *terrain* of
-        // memory tiles but leaves the entity sprites readable through the
-        // tint — RTS-style "you remember the layout but lose live unit info"
-        // requires hiding mobs explicitly when out of vision. Only runs when
-        // the FoV overlay exists (peaceful zones don't tag).
         if (this.fogOverlay) this.updateMobVisibility(pgx, pgy);
       }
     }
-    // Halo flicker — pure visual (no gameplay impact), so it ticks every
-    // frame regardless of whether the player moved.
     this.visionHalo?.tick(dt);
     if (this.minimap) this.minimap.update(this.world);
 
@@ -739,15 +688,15 @@ export class ForestScene implements Scene {
     const grid = worldToGrid(pos.x, pos.y);
     const inv = this.world.getComponent(this.playerId, 'Inventory');
     const prog = this.world.getComponent(this.playerId, 'Progression');
-    // Preserve any pre-existing fog grids from other zones so the Forest
-    // save doesn't clobber Hellena's exploration state.
+    // Preserve any pre-existing fog grids from other zones so Hellena's
+    // save doesn't clobber the Forest's exploration state.
     const existing = SaveManager.load();
     const existingFog = existing?.fogByZone ?? {};
-    const forestFog = this.fog?.exportRevealed();
+    const hellenaFog = this.fog?.exportRevealed();
     SaveManager.save({
-      currentZoneId: 'forest',
+      currentZoneId: 'hellena',
       discoveredZones: existing?.discoveredZones ?? ['forest', 'hellena'],
-      fogByZone: forestFog ? { ...existingFog, forest: forestFog } : existingFog,
+      fogByZone: hellenaFog ? { ...existingFog, hellena: hellenaFog } : existingFog,
       player: {
         hp: Math.round(hp.current),
         maxHp: hp.max,
@@ -1194,14 +1143,10 @@ export class ForestScene implements Scene {
   }
 
   /**
-   * Tag/untag every non-player Faction entity (mobs) with the `Hidden`
-   * component based on the player's current line of sight. RenderSystem +
-   * EntityHudSystem read this tag to skip drawing — RTS-style "out of sight,
-   * out of mind" while the underlying simulation keeps ticking.
-   *
-   * Click-targeting also needs to skip Hidden mobs (so you can't shift-click
-   * an invisible mob behind the fog), but that's handled inside
-   * findEnemyAtWorld via the same Hidden check.
+   * Tag/untag every non-player Faction entity (mobs) with `Hidden` based on
+   * the player's current line of sight. See ForestScene.updateMobVisibility
+   * for the full rationale — same logic, kept inlined per zone scene to
+   * avoid building a shared base class until a third wild zone needs it.
    */
   private updateMobVisibility(playerGx: number, playerGy: number): void {
     if (!this.world || !this.fog) return;

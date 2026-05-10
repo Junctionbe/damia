@@ -42,6 +42,10 @@ export interface MapData {
   exits: MapExit[];
   mobs: MapMob[];
   interactables: MapInteractable[];
+  /** Wild zones (forests, dungeons) set this to true to enable D2-style FoV +
+   *  forced camera-follow. Peaceful zones (towns, hubs) leave it false/unset
+   *  so the player can pan/zoom freely and see the whole layout. */
+  fov?: boolean;
 }
 
 const WALKABLE = 0;
@@ -73,6 +77,32 @@ export function buildCollisionGrid(
     if (propBlocks(p.kind)) {
       const row = grid[p.gy];
       if (row) row[p.gx] = BLOCKED;
+    }
+  }
+  return grid;
+}
+
+/**
+ * Builds the sight-blocking grid for the FogOfWar's line-of-sight check.
+ * Cells with a sight-blocker (tall props: trees, boulders) prevent the LoS
+ * raycast from reaching cells beyond them. Distinct from collision because
+ * low props (logs, stumps) block movement but not vision — you can see
+ * across them.
+ *
+ * Returns a `boolean[gy][gx]` matrix; consumers can wrap it with
+ * `(gx, gy) => grid[gy]?.[gx] ?? false` to feed FogOfWar's predicate.
+ */
+export function buildSightBlockingGrid(
+  map: MapData,
+  propBlocksSight: (kind: PropKind) => boolean,
+): boolean[][] {
+  const grid: boolean[][] = Array.from({ length: map.size.h }, () =>
+    new Array<boolean>(map.size.w).fill(false),
+  );
+  for (const p of map.props) {
+    if (propBlocksSight(p.kind)) {
+      const row = grid[p.gy];
+      if (row) row[p.gx] = true;
     }
   }
   return grid;

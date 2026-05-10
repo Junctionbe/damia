@@ -39,6 +39,9 @@ export class EntityHudSystem implements System<Components> {
     for (const id of world.query(['Health', 'Position'])) {
       if (world.hasComponent(id, 'Player')) continue;
       if (world.hasComponent(id, 'Dying')) continue;
+      // Fog of war: don't paint HP bars for out-of-vision mobs — that would
+      // leak combat info from beyond the player's sight.
+      if (world.hasComponent(id, 'Hidden')) continue;
       const hp = world.getComponent(id, 'Health');
       const pos = world.getComponent(id, 'Position');
       if (!hp || !pos) continue;
@@ -79,7 +82,13 @@ export class EntityHudSystem implements System<Components> {
       if (intent !== undefined) {
         const tHp = world.getComponent(intent.targetId, 'Health');
         const tPos = world.getComponent(intent.targetId, 'Position');
-        if (tHp && tPos && tHp.current > 0 && !world.hasComponent(intent.targetId, 'Dying')) {
+        if (
+          tHp &&
+          tPos &&
+          tHp.current > 0 &&
+          !world.hasComponent(intent.targetId, 'Dying') &&
+          !world.hasComponent(intent.targetId, 'Hidden')
+        ) {
           ringPos = { x: tPos.x, y: tPos.y };
         }
       }

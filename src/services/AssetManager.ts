@@ -26,7 +26,9 @@ const MANIFEST = {
   // Dart portrait used in the HUD (top-left of the screen, in the portrait slot).
   'ui.portrait.dart': { kind: 'texture', url: '/assets/ui/dart-portrait.png' },
   // Main menu background (TLoD title screen).
-  'ui.mainscreen': { kind: 'texture', url: '/assets/ui/mainscreen.png' },
+  'ui.mainscreen': { kind: 'texture', url: '/assets/ui/mainscreen.jpg' },
+  // Endiness overworld map — backdrop of WorldMapScene with fog-of-war markers.
+  'ui.worldmap': { kind: 'texture', url: '/assets/ui/worldmap.png' },
   // Animated attack cursor frames — cycled by CursorOverlay when hovering an enemy.
   'cursor.sword.1': { kind: 'texture', url: '/assets/ui/cursor/sword-1.png' },
   'cursor.sword.2': { kind: 'texture', url: '/assets/ui/cursor/sword-2.png' },

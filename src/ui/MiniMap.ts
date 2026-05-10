@@ -4,13 +4,16 @@ import type { World } from '@core/ecs';
 import { TILE_HALF_H, TILE_HALF_W, gridToWorld, worldToGrid } from '@core/math/iso';
 import type { Components } from '@gameplay/components';
 import type { TileMapPathZone } from '@rendering/TileMap';
+import type { FogOfWar } from '@services/FogOfWar';
 
 const MAP_FIT_PX = 200;
 const PADDING = 12;
 
 interface MiniMapOptions {
-  gridWidth: number;
-  gridHeight: number;
+  /** Shared per-zone fog state. The MiniMap reads from it to paint the fog
+   *  overlay; it does NOT mutate the grid (the scene calls
+   *  `fog.revealCellsAround` once per frame from its own update). */
+  fog: FogOfWar;
   pathZones: readonly TileMapPathZone[];
 }
 
@@ -18,20 +21,13 @@ interface MiniMapOptions {
  * Top-right toggleable minimap. Iso-projected so the rendered shape matches the
  * playable area: the grid (0..W-1, 0..H-1) maps to a 2:1 diamond. Static layer
  * (frame + path zones) is drawn once; dynamic layer (player + enemies + exits)
- * redraws each tick.
- *
- * Coordinate system inside the container:
- *   - The iso-projected world bbox is normalised to fit in MAP_FIT_PX.
- *   - All children use `projectGrid(gx, gy)` to translate grid coords into
- *     local pixel positions.
+ * + fog overlay redraw each tick.
  */
 export class MiniMap {
   readonly container: Container;
   private readonly background: Graphics;
   private readonly staticLayer: Graphics;
   private readonly dynamicLayer: Graphics;
-  private readonly gridWidth: number;
-  private readonly gridHeight: number;
   /** World→minimap scale and offset so projected coords land inside the bbox. */
   private readonly scale: number;
   private readonly offsetX: number;
@@ -41,23 +37,27 @@ export class MiniMap {
   private readonly bboxH: number;
   private app: Application;
   private cleanupKey: (() => void) | null = null;
+  /** Shared fog source. The world overlay (FogOfWarOverlay) reads from the
+   *  same instance, so both renderers stay in sync without extra plumbing. */
+  private readonly fog: FogOfWar;
+  /** Fog overlay (dark squares for unrevealed cells) — redrawn each frame. */
+  private readonly fogLayer: Graphics;
 
   constructor(app: Application, opts: MiniMapOptions) {
     this.app = app;
-    this.gridWidth = opts.gridWidth;
-    this.gridHeight = opts.gridHeight;
+    this.fog = opts.fog;
 
     // Iso bbox of the grid (0,0)..(W-1, H-1) in world px:
     //  width  = (W + H - 2) * TILE_HALF_W
     //  height = (W + H - 2) * TILE_HALF_H
     // (TILE_HALF_W = 64, TILE_HALF_H = 32 → height = width / 2.)
-    const span = opts.gridWidth + opts.gridHeight - 2;
+    const span = this.fog.width + this.fog.height - 2;
     const isoW = span * TILE_HALF_W;
     const isoH = span * TILE_HALF_H;
     this.scale = MAP_FIT_PX / Math.max(isoW, isoH);
     // gridToWorld puts (0,0) at world (0,0); the leftmost point is (0, H-1) at
     // world x = -(H-1)*TILE_HALF_W. Shift everything so the diamond starts at x=0.
-    this.offsetX = (opts.gridHeight - 1) * TILE_HALF_W * this.scale;
+    this.offsetX = (this.fog.height - 1) * TILE_HALF_W * this.scale;
     this.offsetY = 0;
     this.bboxW = isoW * this.scale;
     this.bboxH = isoH * this.scale;
@@ -96,7 +96,9 @@ export class MiniMap {
     }
 
     this.dynamicLayer = new Graphics();
-    this.container.addChild(this.background, this.staticLayer, this.dynamicLayer);
+    this.fogLayer = new Graphics();
+    // Order: background → path zones → fog overlay → live dots on top.
+    this.container.addChild(this.background, this.staticLayer, this.fogLayer, this.dynamicLayer);
 
     this.reposition();
     app.renderer.on('resize', () => this.reposition());
@@ -108,14 +110,55 @@ export class MiniMap {
     this.cleanupKey = () => window.removeEventListener('keydown', onKey);
   }
 
-  /** Redraws all dynamic dots from the world state. Called each frame. */
+  /** Redraws fog reveal + dynamic dots from the world state. Called each frame.
+   *  The shared FogOfWar grid is mutated by the scene (NOT here) before this
+   *  is called, so the overlay always paints the latest state. */
   update(world: World<Components>): void {
+    let playerGx = -1;
+    let playerGy = -1;
+    for (const id of world.query(['Player', 'Position'])) {
+      const pos = world.getComponent(id, 'Position');
+      if (!pos) continue;
+      const grid = worldToGrid(pos.x, pos.y);
+      playerGx = Math.round(grid.x);
+      playerGy = Math.round(grid.y);
+      break;
+    }
+
     if (!this.container.visible) return;
+
+    // Fog overlay — dark squares for unrevealed cells, redrawn each frame
+    // because per-cell state changes as the player explores.
+    const fogG = this.fogLayer.clear();
+    const cellW = TILE_HALF_W * this.scale;
+    const cellH = TILE_HALF_H * this.scale;
+    for (let gx = 0; gx < this.fog.width; gx++) {
+      for (let gy = 0; gy < this.fog.height; gy++) {
+        if (this.fog.isRevealed(gx, gy)) continue;
+        const p = this.projectGrid(gx, gy);
+        // Each grid cell projects to a small iso diamond on the minimap.
+        fogG
+          .poly([
+            p.x,
+            p.y - cellH / 2,
+            p.x + cellW / 2,
+            p.y,
+            p.x,
+            p.y + cellH / 2,
+            p.x - cellW / 2,
+            p.y,
+          ])
+          .fill({ color: 0x000000, alpha: 0.85 });
+      }
+    }
+
     const g = this.dynamicLayer.clear();
 
     for (const id of world.query(['Exit'])) {
       const e = world.getComponent(id, 'Exit');
       if (!e) continue;
+      // Don't reveal exits in unexplored cells.
+      if (!this.fog.isRevealed(e.gx, e.gy)) continue;
       const color = e.kind === 'transition' ? 0xffd060 : 0x808080;
       this.dot(g, e.gx, e.gy, 4, color);
     }
@@ -126,15 +169,14 @@ export class MiniMap {
       if (!fac || !pos) continue;
       if (fac.side === 'player') continue;
       const grid = worldToGrid(pos.x, pos.y);
-      this.dot(g, Math.round(grid.x), Math.round(grid.y), 3, 0xff6060);
+      const gx = Math.round(grid.x);
+      const gy = Math.round(grid.y);
+      // Hide enemy dots in fog — only show what the player can "see".
+      if (!this.fog.isRevealed(gx, gy)) continue;
+      this.dot(g, gx, gy, 3, 0xff6060);
     }
 
-    for (const id of world.query(['Player', 'Position'])) {
-      const pos = world.getComponent(id, 'Position');
-      if (!pos) continue;
-      const grid = worldToGrid(pos.x, pos.y);
-      this.dot(g, Math.round(grid.x), Math.round(grid.y), 4, 0x60d8ff);
-    }
+    if (playerGx >= 0) this.dot(g, playerGx, playerGy, 4, 0x60d8ff);
   }
 
   destroy(): void {
@@ -150,7 +192,7 @@ export class MiniMap {
   }
 
   private dot(g: Graphics, gx: number, gy: number, radius: number, color: number): void {
-    if (gx < 0 || gy < 0 || gx >= this.gridWidth || gy >= this.gridHeight) return;
+    if (gx < 0 || gy < 0 || gx >= this.fog.width || gy >= this.fog.height) return;
     const p = this.projectGrid(gx, gy);
     g.circle(p.x, p.y, radius).fill(color);
   }

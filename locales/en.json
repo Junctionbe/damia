@@ -46,6 +46,10 @@
     "forestOfSeles": {
       "name": "Forest of Seles",
       "objective": "Find Hellena Prison"
+    },
+    "hellenaPrison": {
+      "name": "Hellena Prison",
+      "objective": "Free Shana"
     }
   },
   "interactables": {

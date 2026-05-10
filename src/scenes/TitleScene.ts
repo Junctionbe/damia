@@ -6,6 +6,7 @@ import { SaveManager } from '@services/SaveManager';
 import { AssetManager } from '@services/AssetManager';
 import { playMusic, playSfx, unlockAudio } from '@services/AudioManager';
 import { ForestScene } from '@scenes/ForestOfSeles/ForestScene';
+import { HellenaScene } from '@scenes/HellenaPrison/HellenaScene';
 
 interface ButtonHandle {
   container: Container;
@@ -63,7 +64,11 @@ export class TitleScene implements Scene {
       const save = SaveManager.load();
       if (!save) return;
       playSfx('ui.click');
-      void ctx.scenes.switchTo(new ForestScene(save), ctx);
+      // Route Continue back to whichever zone was active when the player saved.
+      // Forest stays the default fallback for any unexpected zone id.
+      const next: Scene =
+        save.currentZoneId === 'hellena' ? new HellenaScene(save) : new ForestScene(save);
+      void ctx.scenes.switchTo(next, ctx);
     });
     continueBtn.setEnabled(SaveManager.has());
 

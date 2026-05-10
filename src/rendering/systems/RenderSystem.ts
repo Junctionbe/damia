@@ -40,6 +40,12 @@ export class RenderSystem implements System<Components> {
         this.nodes.set(id, node);
       }
 
+      // Fog-of-war: entities tagged Hidden (out-of-vision mobs in wild zones)
+      // render as invisible. We still run the position / animation updates
+      // below so the mob re-appears at its CURRENT location the moment it
+      // re-enters vision (no stale snapshots from when it was tagged).
+      node.visible = !world.hasComponent(id, 'Hidden');
+
       const swing = world.getComponent(id, 'AttackSwing');
       const addition = world.getComponent(id, 'Addition');
       const spell = world.getComponent(id, 'Spell');
