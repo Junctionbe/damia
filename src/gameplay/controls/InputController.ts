@@ -131,6 +131,37 @@ export class InputController {
     return () => this.slotListeners.delete(listener);
   }
 
+  /**
+   * External dispatch points — the touch overlay (joystick + on-screen
+   * buttons) drives the same event pipeline as keyboard / mouse by calling
+   * these instead of synthesising fake DOM events. The scene's listeners
+   * don't know or care which input source emitted them.
+   */
+  emitClick(cmd: ClickCommand): void {
+    this.clickListeners.forEach((l) => l(cmd));
+  }
+
+  /** External dispatch for the defend toggle. Mirrors the `S` key behaviour
+   *  (keydown → on, keyup → off) but lets the touch UI drive it as a tap-to-
+   *  toggle (caller flips the state on each tap). */
+  emitDefend(active: boolean): void {
+    if (this.defendState === active) return;
+    this.defendState = active;
+    this.defendListeners.forEach((l) => l(active));
+  }
+
+  /** External dispatch for hotbar slot activation (0..7). Mirrors the
+   *  number-key path so the touch hotbar can re-use the slot-resolve logic. */
+  emitSlot(slotIdx: number): void {
+    this.slotListeners.forEach((l) => l(slotIdx));
+  }
+
+  /** Current defend state — used by the touch UI's defend button to draw the
+   *  ON/OFF visual from a single source of truth. */
+  isDefending(): boolean {
+    return this.defendState;
+  }
+
   destroy(): void {
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns.length = 0;

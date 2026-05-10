@@ -57,8 +57,12 @@ import { SettingsPanel } from '@ui/SettingsPanel';
 import { CursorOverlay } from '@ui/CursorOverlay';
 import { InventoryPanel } from '@ui/InventoryPanel';
 import { VisionHalo } from '@ui/VisionHalo';
+import { VirtualJoystick } from '@ui/VirtualJoystick';
+import { TouchActionButtons } from '@ui/TouchActionButtons';
+import { TouchMenuButtons } from '@ui/TouchMenuButtons';
 import { FogOfWar } from '@services/FogOfWar';
 import { FogOfWarOverlay } from '@rendering/FogOfWarOverlay';
+import { isTouchDevice } from '@services/Device';
 import { t } from '@services/I18nService';
 import { playMusic, playSfx, stopMusic } from '@services/AudioManager';
 import { SaveManager, type SaveDataV5 } from '@services/SaveManager';
@@ -120,6 +124,11 @@ export class HellenaScene implements Scene {
   private fog: FogOfWar | null = null;
   private fogOverlay: FogOfWarOverlay | null = null;
   private visionHalo: VisionHalo | null = null;
+  private virtualJoystick: VirtualJoystick | null = null;
+  private touchActionButtons: TouchActionButtons | null = null;
+  private touchMenuButtons: TouchMenuButtons | null = null;
+  /** Last joystick-driven move emit (ms). Throttles re-targeting. */
+  private joystickEmitMs = 0;
   private inventoryPanel: InventoryPanel | null = null;
   /** Latest pointer position in world coords — set by pointermove on the viewport,
    *  read each frame to detect enemy-hover for the cursor overlay. */
@@ -329,18 +338,20 @@ export class HellenaScene implements Scene {
     });
     this.layers.ui.addChild(this.additionsBar.container);
 
-    // Custom animated sword cursor — added at the app stage level so it sits
-    // above every layer (UI included) and isn't affected by camera scale.
-    this.cursorOverlay = new CursorOverlay(ctx.app, this.viewport);
-    ctx.app.stage.addChild(this.cursorOverlay.node);
-    // Track the latest world-space mouse position for per-frame hover detection.
-    const onPointerMoveTrack = (e: FederatedPointerEvent): void => {
-      if (!this.viewport) return;
-      const local = this.viewport.toWorld(e.global);
-      this.lastMouseWorld = { x: local.x, y: local.y };
-    };
-    this.viewport.on('pointermove', onPointerMoveTrack);
-    this.cleanups.push(() => this.viewport?.off('pointermove', onPointerMoveTrack));
+    // Custom animated sword cursor — skipped on touch devices (no mouse).
+    const touch = isTouchDevice();
+    if (!touch) {
+      this.cursorOverlay = new CursorOverlay(ctx.app, this.viewport);
+      ctx.app.stage.addChild(this.cursorOverlay.node);
+      // Track the latest world-space mouse position for per-frame hover detection.
+      const onPointerMoveTrack = (e: FederatedPointerEvent): void => {
+        if (!this.viewport) return;
+        const local = this.viewport.toWorld(e.global);
+        this.lastMouseWorld = { x: local.x, y: local.y };
+      };
+      this.viewport.on('pointermove', onPointerMoveTrack);
+      this.cleanups.push(() => this.viewport?.off('pointermove', onPointerMoveTrack));
+    }
     this.layers.ui.addChild(
       this.hud.container,
       this.hotbar.container,
@@ -349,6 +360,31 @@ export class HellenaScene implements Scene {
       this.actionLog.container,
       this.settings.container,
     );
+
+    // Touch overlay — joystick + action buttons + menu icons. See ForestScene
+    // for the full rationale.
+    if (touch) {
+      this.virtualJoystick = new VirtualJoystick(ctx.app);
+      this.layers.ui.addChild(this.virtualJoystick.container);
+
+      this.touchActionButtons = new TouchActionButtons(ctx.app, {
+        onAttack: () => this.touchAttackNearest(),
+        onAddition: () => this.input?.emitClick({ button: 'right', gx: 0, gy: 0 }),
+        onDefendToggle: () => this.input?.emitDefend(!this.input.isDefending()),
+        isDefending: () => this.input?.isDefending() ?? false,
+      });
+      this.layers.ui.addChild(this.touchActionButtons.container);
+
+      this.touchMenuButtons = new TouchMenuButtons(ctx.app, {
+        onInventory: () => {
+          if (!this.inventoryPanel) return;
+          if (this.inventoryPanel.isOpen) this.inventoryPanel.close();
+          else this.openInventoryPanel();
+        },
+        onSettings: () => this.settings?.toggle(),
+      });
+      this.layers.ui.addChild(this.touchMenuButtons.container);
+    }
 
     this.zoneTitle.show(t('zones.hellenaPrison.name'), t('zones.hellenaPrison.objective'));
 
@@ -541,6 +577,12 @@ export class HellenaScene implements Scene {
     this.fogOverlay = null;
     this.visionHalo?.destroy();
     this.visionHalo = null;
+    this.virtualJoystick?.destroy();
+    this.virtualJoystick = null;
+    this.touchActionButtons?.destroy();
+    this.touchActionButtons = null;
+    this.touchMenuButtons?.destroy();
+    this.touchMenuButtons = null;
     this.fog = null;
     this.lastMouseWorld = null;
     this.inventoryPanel?.destroy();
@@ -672,6 +714,7 @@ export class HellenaScene implements Scene {
       }
     }
     this.visionHalo?.tick(dt);
+    this.pollJoystickMove();
     if (this.minimap) this.minimap.update(this.world);
 
     if (this.cameraFollow && this.viewport && this.playerId !== null) {
@@ -1140,6 +1183,51 @@ export class HellenaScene implements Scene {
   private findEnemyAtCell(gx: number, gy: number): Entity | null {
     const p = gridToWorld(gx, gy);
     return this.findEnemyAtWorld(p.x, p.y);
+  }
+
+  /**
+   * Touch joystick poll — see ForestScene.pollJoystickMove for the full
+   * rationale. Kept inlined per zone scene rather than factored into a base
+   * class until a third wild zone needs it.
+   */
+  private pollJoystickMove(): void {
+    if (!this.virtualJoystick || !this.input || !this.world || this.playerId === null) return;
+    const dir = this.virtualJoystick.direction();
+    if (!dir) return;
+    const now = performance.now();
+    if (now - this.joystickEmitMs < 150) return;
+    this.joystickEmitMs = now;
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!pos) return;
+    const STEPS = 5;
+    const tileDiag = Math.sqrt(64 * 64 + 32 * 32);
+    const targetWx = pos.x + dir.x * STEPS * tileDiag;
+    const targetWy = pos.y + dir.y * STEPS * tileDiag;
+    const grid = worldToGrid(targetWx, targetWy);
+    this.input.emitClick({
+      button: 'left',
+      gx: Math.round(grid.x),
+      gy: Math.round(grid.y),
+    });
+  }
+
+  /** Touch attack button — picks the nearest enemy in melee range and
+   *  emits a left-click on its cell. See ForestScene.touchAttackNearest. */
+  private touchAttackNearest(): void {
+    if (!this.world || this.playerId === null || !this.input) return;
+    const stats = this.world.getComponent(this.playerId, 'Stats');
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!stats || !pos) return;
+    const target = this.pickAdditionTarget(pos.x, pos.y, stats.range);
+    if (target === null) return;
+    const tp = this.world.getComponent(target, 'Position');
+    if (!tp) return;
+    const grid = worldToGrid(tp.x, tp.y);
+    this.input.emitClick({
+      button: 'left',
+      gx: Math.round(grid.x),
+      gy: Math.round(grid.y),
+    });
   }
 
   /**

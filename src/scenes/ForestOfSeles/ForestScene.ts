@@ -58,8 +58,12 @@ import { EncounterIndicator } from '@ui/EncounterIndicator';
 import { CursorOverlay } from '@ui/CursorOverlay';
 import { InventoryPanel } from '@ui/InventoryPanel';
 import { VisionHalo } from '@ui/VisionHalo';
+import { VirtualJoystick } from '@ui/VirtualJoystick';
+import { TouchActionButtons } from '@ui/TouchActionButtons';
+import { TouchMenuButtons } from '@ui/TouchMenuButtons';
 import { FogOfWar } from '@services/FogOfWar';
 import { FogOfWarOverlay } from '@rendering/FogOfWarOverlay';
+import { isTouchDevice } from '@services/Device';
 import { t } from '@services/I18nService';
 import { playMusic, playSfx, stopMusic } from '@services/AudioManager';
 import { SaveManager, type SaveDataV5 } from '@services/SaveManager';
@@ -95,6 +99,12 @@ export class ForestScene implements Scene {
   private fog: FogOfWar | null = null;
   private fogOverlay: FogOfWarOverlay | null = null;
   private visionHalo: VisionHalo | null = null;
+  private virtualJoystick: VirtualJoystick | null = null;
+  private touchActionButtons: TouchActionButtons | null = null;
+  private touchMenuButtons: TouchMenuButtons | null = null;
+  /** Wall-clock timestamp of the last joystick-driven move emit. Throttled
+   *  so we don't pound the pathfinder every frame while the joystick is held. */
+  private joystickEmitMs = 0;
   private inventoryPanel: InventoryPanel | null = null;
   /** Latest pointer position in world coords — set by pointermove on the viewport,
    *  read each frame to detect enemy-hover for the cursor overlay. */
@@ -354,16 +364,20 @@ export class ForestScene implements Scene {
 
     // Custom animated sword cursor — added at the app stage level so it sits
     // above every layer (UI included) and isn't affected by camera scale.
-    this.cursorOverlay = new CursorOverlay(ctx.app, this.viewport);
-    ctx.app.stage.addChild(this.cursorOverlay.node);
-    // Track the latest world-space mouse position for per-frame hover detection.
-    const onPointerMoveTrack = (e: FederatedPointerEvent): void => {
-      if (!this.viewport) return;
-      const local = this.viewport.toWorld(e.global);
-      this.lastMouseWorld = { x: local.x, y: local.y };
-    };
-    this.viewport.on('pointermove', onPointerMoveTrack);
-    this.cleanups.push(() => this.viewport?.off('pointermove', onPointerMoveTrack));
+    // Skipped on touch devices (no mouse → no cursor follower).
+    const touch = isTouchDevice();
+    if (!touch) {
+      this.cursorOverlay = new CursorOverlay(ctx.app, this.viewport);
+      ctx.app.stage.addChild(this.cursorOverlay.node);
+      // Track the latest world-space mouse position for per-frame hover detection.
+      const onPointerMoveTrack = (e: FederatedPointerEvent): void => {
+        if (!this.viewport) return;
+        const local = this.viewport.toWorld(e.global);
+        this.lastMouseWorld = { x: local.x, y: local.y };
+      };
+      this.viewport.on('pointermove', onPointerMoveTrack);
+      this.cleanups.push(() => this.viewport?.off('pointermove', onPointerMoveTrack));
+    }
     this.layers.ui.addChild(
       this.hud.container,
       this.hotbar.container,
@@ -372,6 +386,32 @@ export class ForestScene implements Scene {
       this.actionLog.container,
       this.settings.container,
     );
+
+    // Touch overlay — joystick + action buttons + menu icons. Mounted on the
+    // UI layer so they ride on top of everything else and the per-button
+    // pointer handlers don't clash with the world's click-to-move pipeline.
+    if (touch) {
+      this.virtualJoystick = new VirtualJoystick(ctx.app);
+      this.layers.ui.addChild(this.virtualJoystick.container);
+
+      this.touchActionButtons = new TouchActionButtons(ctx.app, {
+        onAttack: () => this.touchAttackNearest(),
+        onAddition: () => this.input?.emitClick({ button: 'right', gx: 0, gy: 0 }),
+        onDefendToggle: () => this.input?.emitDefend(!this.input.isDefending()),
+        isDefending: () => this.input?.isDefending() ?? false,
+      });
+      this.layers.ui.addChild(this.touchActionButtons.container);
+
+      this.touchMenuButtons = new TouchMenuButtons(ctx.app, {
+        onInventory: () => {
+          if (!this.inventoryPanel) return;
+          if (this.inventoryPanel.isOpen) this.inventoryPanel.close();
+          else this.openInventoryPanel();
+        },
+        onSettings: () => this.settings?.toggle(),
+      });
+      this.layers.ui.addChild(this.touchMenuButtons.container);
+    }
 
     this.zoneTitle.show(t('zones.forestOfSeles.name'), t('zones.forestOfSeles.objective'));
 
@@ -572,6 +612,12 @@ export class ForestScene implements Scene {
     this.fogOverlay = null;
     this.visionHalo?.destroy();
     this.visionHalo = null;
+    this.virtualJoystick?.destroy();
+    this.virtualJoystick = null;
+    this.touchActionButtons?.destroy();
+    this.touchActionButtons = null;
+    this.touchMenuButtons?.destroy();
+    this.touchMenuButtons = null;
     this.fog = null;
     this.lastMouseWorld = null;
     this.inventoryPanel?.destroy();
@@ -723,6 +769,10 @@ export class ForestScene implements Scene {
     // Halo flicker — pure visual (no gameplay impact), so it ticks every
     // frame regardless of whether the player moved.
     this.visionHalo?.tick(dt);
+    // Touch joystick: poll direction each frame, retarget the pathfinder at
+    // most every 150 ms so we don't recompute the path on every tick. The
+    // emitted click goes through the same pipeline as a real mouse click.
+    this.pollJoystickMove();
     if (this.minimap) this.minimap.update(this.world);
 
     if (this.cameraFollow && this.viewport && this.playerId !== null) {
@@ -1191,6 +1241,59 @@ export class ForestScene implements Scene {
   private findEnemyAtCell(gx: number, gy: number): Entity | null {
     const p = gridToWorld(gx, gy);
     return this.findEnemyAtWorld(p.x, p.y);
+  }
+
+  /**
+   * Touch overlay — poll the virtual joystick and emit a left-click toward
+   * a cell ≈ 5 tiles ahead of the player in the joystick's direction. We
+   * throttle to ~150 ms because each click triggers a pathfinder request,
+   * and we re-target the same kind of cell while the joystick is held —
+   * faster polling would just spam the path solver.
+   */
+  private pollJoystickMove(): void {
+    if (!this.virtualJoystick || !this.input || !this.world || this.playerId === null) return;
+    const dir = this.virtualJoystick.direction();
+    if (!dir) return;
+    const now = performance.now();
+    if (now - this.joystickEmitMs < 150) return;
+    this.joystickEmitMs = now;
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!pos) return;
+    // 5 tiles in the joystick direction. Tile diagonal in iso = √(W² + H²).
+    const STEPS = 5;
+    const tileDiag = Math.sqrt(64 * 64 + 32 * 32);
+    const targetWx = pos.x + dir.x * STEPS * tileDiag;
+    const targetWy = pos.y + dir.y * STEPS * tileDiag;
+    const grid = worldToGrid(targetWx, targetWy);
+    this.input.emitClick({
+      button: 'left',
+      gx: Math.round(grid.x),
+      gy: Math.round(grid.y),
+    });
+  }
+
+  /**
+   * Touch attack button handler — picks the nearest enemy in the player's
+   * melee range and emits a left-click on its cell, reusing the world's
+   * click-to-target logic so combat behaves identically to a mouse click.
+   * No-op when nothing's in range (player still has the addition button for
+   * longer-reach engages).
+   */
+  private touchAttackNearest(): void {
+    if (!this.world || this.playerId === null || !this.input) return;
+    const stats = this.world.getComponent(this.playerId, 'Stats');
+    const pos = this.world.getComponent(this.playerId, 'Position');
+    if (!stats || !pos) return;
+    const target = this.pickAdditionTarget(pos.x, pos.y, stats.range);
+    if (target === null) return;
+    const tp = this.world.getComponent(target, 'Position');
+    if (!tp) return;
+    const grid = worldToGrid(tp.x, tp.y);
+    this.input.emitClick({
+      button: 'left',
+      gx: Math.round(grid.x),
+      gy: Math.round(grid.y),
+    });
   }
 
   /**
